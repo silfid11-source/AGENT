@@ -1,4 +1,7 @@
+from html.parser import HTMLParser
 from pathlib import Path
+from urllib.error import URLError
+from urllib.request import Request, urlopen
 
 
 REFERENCE_DIRS = [
@@ -11,6 +14,33 @@ REFERENCE_DIRS = [
 
 REFERENCE_RULES_PATH = "reference_rules.md"
 SUPPORTED_REFERENCE_EXTENSIONS = {".txt", ".md", ".csv"}
+URL_REFERENCE_FILE = "urls.txt"
+
+
+class PageTextParser(HTMLParser):
+    def __init__(self):
+        super().__init__()
+        self.parts = []
+        self.skip_depth = 0
+
+    def handle_starttag(self, tag, attrs):
+        if tag in {"script", "style", "noscript", "svg"}:
+            self.skip_depth += 1
+
+    def handle_endtag(self, tag):
+        if tag in {"script", "style", "noscript", "svg"} and self.skip_depth:
+            self.skip_depth -= 1
+
+    def handle_data(self, data):
+        if self.skip_depth:
+            return
+
+        text = " ".join(data.split())
+        if text:
+            self.parts.append(text)
+
+    def get_text(self):
+        return "\n".join(self.parts)
 
 
 def ensure_reference_folders(base_dir="references"):
@@ -56,7 +86,75 @@ def load_reference_examples(base_dir="references", max_chars=12000):
         if len(folder_blocks) > 1:
             blocks.append("\n\n".join(folder_blocks))
 
+    url_examples = load_url_reference_examples(base_path, max_chars - total_chars)
+    if url_examples:
+        blocks.append(url_examples)
+
     return "\n\n".join(blocks).strip()
+
+
+def load_reference_urls(base_path):
+    url_file = base_path / URL_REFERENCE_FILE
+    if not url_file.exists():
+        return []
+
+    urls = []
+    for line in url_file.read_text(encoding="utf-8", errors="ignore").splitlines():
+        text = line.strip()
+        if not text or text.startswith("#"):
+            continue
+        if text.startswith(("http://", "https://")):
+            urls.append(text)
+
+    return urls
+
+
+def fetch_url_text(url, max_chars=3000):
+    request = Request(
+        url,
+        headers={
+            "User-Agent": "Mozilla/5.0 ShowParkAIStudio/1.0",
+        },
+    )
+    with urlopen(request, timeout=12) as response:
+        raw = response.read(max_chars * 8)
+
+    html = raw.decode("utf-8", errors="ignore")
+    parser = PageTextParser()
+    parser.feed(html)
+    return parser.get_text()[:max_chars].strip()
+
+
+def load_url_reference_examples(base_path, max_chars):
+    if max_chars <= 0:
+        return ""
+
+    urls = load_reference_urls(base_path)
+    if not urls:
+        return ""
+
+    blocks = ["## urls"]
+    total_chars = 0
+
+    for url in urls:
+        if total_chars >= max_chars:
+            break
+
+        try:
+            text = fetch_url_text(url, max_chars=min(3000, max_chars - total_chars))
+        except (OSError, URLError, TimeoutError) as error:
+            text = f"URL을 읽지 못했습니다: {error}"
+
+        if not text:
+            continue
+
+        blocks.append(f"### {url}\n{text}")
+        total_chars += len(text)
+
+    if len(blocks) == 1:
+        return ""
+
+    return "\n\n".join(blocks)
 
 
 def load_reference_rules(path=REFERENCE_RULES_PATH):

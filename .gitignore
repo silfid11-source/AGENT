@@ -28,6 +28,7 @@ references/**/*.txt
 references/**/*.md
 references/**/*.csv
 !references/README.md
+!references/urls.example.txt
 !references/**/.gitkeep
 
 # Local editor/system files

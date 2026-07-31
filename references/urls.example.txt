@@ -1,0 +1,4 @@
+# 참고할 URL을 한 줄에 하나씩 넣으세요.
+# 이 파일을 urls.txt로 복사해서 사용하면 됩니다.
+# 예:
+# https://example.com/reference-page

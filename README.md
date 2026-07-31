@@ -76,6 +76,7 @@ python run_workflow.py
 - `references/scripts`: 릴스 대본 예시
 - `references/image_prompts`: 이미지 프롬프트 예시
 - `references/video_prompts`: 영상 프롬프트 예시
+- `references/urls.txt`: 참고하고 싶은 웹페이지 URL 목록
 
 API 호출 없이 폴더와 입력값만 점검하려면:
 
@@ -91,3 +92,5 @@ python run_workflow.py --analyze-references
 
 분석 결과는 `reference_rules.md`에 저장되고, 이후 에이전트들이 자동으로 참고합니다.
 고객 레퍼런스 원본과 분석 결과는 GitHub에 올라가지 않도록 제외되어 있습니다.
+
+URL 레퍼런스를 쓰려면 `references/urls.example.txt`를 복사해서 `references/urls.txt`를 만들고, URL을 한 줄에 하나씩 넣으면 됩니다.
