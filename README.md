@@ -37,6 +37,7 @@ streamlit run app_v2.py
 
 - `app_v2.py`: 메인 Streamlit 앱
 - `agents.py`: 분야별 에이전트 파이프라인
+- `agent_rules.py`: 에이전트 공통 규칙과 작업 지침
 - `workflows.py`: 화면 없이 실행하는 자동화 워크플로우 로직
 - `run_workflow.py`: 자동화 워크플로우 실행 파일
 - `workflow_inputs.csv`: 자동화에 사용할 콘텐츠 입력 목록

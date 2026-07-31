@@ -1,3 +1,6 @@
+from agent_rules import SHOWPARK_AGENT_RULES
+
+
 def ask_agent(client, model_name, agent_name, prompt):
     response = client.responses.create(
         model=model_name,
@@ -5,6 +8,8 @@ def ask_agent(client, model_name, agent_name, prompt):
 너는 ShowPark AI Studio의 {agent_name}야.
 모든 답변은 한국어로 작성해.
 바로 실무에 사용할 수 있게 구체적으로 작성해.
+
+{SHOWPARK_AGENT_RULES}
 
 {prompt}
 """,
