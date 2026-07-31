@@ -1,7 +1,19 @@
 from agent_rules import SHOWPARK_AGENT_RULES
+from reference_analyzer import load_reference_rules
 
 
 def ask_agent(client, model_name, agent_name, prompt):
+    reference_rules = load_reference_rules()
+    reference_block = ""
+    if reference_rules:
+        reference_block = f"""
+[레퍼런스 분석 규칙]
+아래 규칙은 사용자가 넣어둔 레퍼런스 예시를 분석해서 만든 스타일 기준이야.
+가능한 한 이 규칙을 우선 적용해.
+
+{reference_rules}
+"""
+
     response = client.responses.create(
         model=model_name,
         input=f"""
@@ -10,6 +22,8 @@ def ask_agent(client, model_name, agent_name, prompt):
 바로 실무에 사용할 수 있게 구체적으로 작성해.
 
 {SHOWPARK_AGENT_RULES}
+
+{reference_block}
 
 {prompt}
 """,

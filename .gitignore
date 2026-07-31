@@ -19,8 +19,16 @@ __pycache__/
 projects/
 results/
 workflow_outputs/
+reference_rules.md
 reels_result_*.txt
 reels_content_*.txt
+
+# Private reference examples
+references/**/*.txt
+references/**/*.md
+references/**/*.csv
+!references/README.md
+!references/**/.gitkeep
 
 # Local editor/system files
 .vscode/

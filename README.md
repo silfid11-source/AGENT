@@ -38,6 +38,8 @@ streamlit run app_v2.py
 - `app_v2.py`: 메인 Streamlit 앱
 - `agents.py`: 분야별 에이전트 파이프라인
 - `agent_rules.py`: 에이전트 공통 규칙과 작업 지침
+- `reference_analyzer.py`: 레퍼런스 예시를 분석해서 에이전트 규칙으로 바꾸는 자동화
+- `references`: 레퍼런스 예시를 넣는 폴더
 - `workflows.py`: 화면 없이 실행하는 자동화 워크플로우 로직
 - `run_workflow.py`: 자동화 워크플로우 실행 파일
 - `workflow_inputs.csv`: 자동화에 사용할 콘텐츠 입력 목록
@@ -62,3 +64,30 @@ python run_workflow.py
 ```
 
 결과는 `workflow_outputs` 폴더에 저장됩니다.
+
+## 레퍼런스 학습형 자동화
+
+마음에 드는 예시를 `references` 폴더에 넣어두면 에이전트가 먼저 스타일을 분석한 뒤 결과물에 반영할 수 있습니다.
+
+사용할 수 있는 폴더:
+
+- `references/brand_guides`: 브랜드 톤, 금지 표현, 고객 정보
+- `references/captions`: 인스타 캡션 예시
+- `references/scripts`: 릴스 대본 예시
+- `references/image_prompts`: 이미지 프롬프트 예시
+- `references/video_prompts`: 영상 프롬프트 예시
+
+API 호출 없이 폴더와 입력값만 점검하려면:
+
+```powershell
+python run_workflow.py --analyze-references --dry-run
+```
+
+레퍼런스를 분석하고 자동화를 실행하려면:
+
+```powershell
+python run_workflow.py --analyze-references
+```
+
+분석 결과는 `reference_rules.md`에 저장되고, 이후 에이전트들이 자동으로 참고합니다.
+고객 레퍼런스 원본과 분석 결과는 GitHub에 올라가지 않도록 제외되어 있습니다.
