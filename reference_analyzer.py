@@ -133,6 +133,8 @@ def load_url_reference_examples(base_path, max_chars):
     if not urls:
         return ""
 
+    print(f"URL 레퍼런스 {len(urls)}개를 읽는 중입니다...", flush=True)
+
     blocks = ["## urls"]
     total_chars = 0
 
@@ -140,14 +142,17 @@ def load_url_reference_examples(base_path, max_chars):
         if total_chars >= max_chars:
             break
 
+        print(f"- URL 읽는 중: {url}", flush=True)
         try:
             text = fetch_url_text(url, max_chars=min(3000, max_chars - total_chars))
         except (OSError, URLError, TimeoutError) as error:
             text = f"URL을 읽지 못했습니다: {error}"
+            print(f"  URL 읽기 실패: {error}", flush=True)
 
         if not text:
             continue
 
+        print(f"  URL 내용 읽기 완료: {len(text)}자", flush=True)
         blocks.append(f"### {url}\n{text}")
         total_chars += len(text)
 
@@ -171,11 +176,13 @@ def analyze_references(
     base_dir="references",
     output_path=REFERENCE_RULES_PATH,
 ):
+    print("레퍼런스 자료를 모으는 중입니다...", flush=True)
     examples = load_reference_examples(base_dir)
     if not examples:
         ensure_reference_folders(base_dir)
         return ""
 
+    print("AI가 레퍼런스 스타일을 분석 중입니다...", flush=True)
     prompt = f"""
 너는 ShowPark AI Studio의 레퍼런스 분석 에이전트야.
 아래 레퍼런스들을 분석해서 앞으로 콘텐츠 에이전트들이 따라야 할 스타일 규칙을 만들어.

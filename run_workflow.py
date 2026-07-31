@@ -33,6 +33,7 @@ def main():
     )
     args = parser.parse_args()
 
+    print("ShowPark 자동 워크플로우를 시작합니다.", flush=True)
     ensure_reference_folders(args.references)
     load_env_file()
 
@@ -44,11 +45,13 @@ def main():
         if not api_key:
             raise RuntimeError(".env 파일에서 OPENAI_API_KEY를 찾을 수 없습니다.")
         client = OpenAI(api_key=api_key)
+        print(f"OpenAI API 연결 완료: {args.model}", flush=True)
 
     if args.analyze_references:
         if args.dry_run:
             print("레퍼런스 폴더 점검 완료: API 호출 없이 분석은 건너뜁니다.")
         else:
+            print("레퍼런스 분석을 시작합니다.", flush=True)
             rules = analyze_references(
                 client=client,
                 model_name=args.model,
@@ -59,6 +62,7 @@ def main():
             else:
                 print("레퍼런스 파일이 없어 분석을 건너뜁니다.")
 
+    print("콘텐츠 자동화 작업을 시작합니다.", flush=True)
     results = run_batch_workflow(
         client=client,
         model_name=args.model,

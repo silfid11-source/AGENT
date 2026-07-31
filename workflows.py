@@ -102,6 +102,10 @@ def run_batch_workflow(client, model_name, input_csv, output_dir, limit=None, dr
     results = []
     for index, context in enumerate(tasks, start=1):
         if dry_run:
+            print(
+                f"{index}. 입력 점검: {context['industry_name']} - {context['topic_text']}",
+                flush=True,
+            )
             results.append(
                 {
                     "index": index,
@@ -113,6 +117,10 @@ def run_batch_workflow(client, model_name, input_csv, output_dir, limit=None, dr
             )
             continue
 
+        print(
+            f"{index}. 콘텐츠 생성 중: {context['industry_name']} - {context['topic_text']}",
+            flush=True,
+        )
         pipeline = run_showpark_agent_pipeline(client, model_name, context)
         folder = save_workflow_result(
             context,
@@ -120,6 +128,7 @@ def run_batch_workflow(client, model_name, input_csv, output_dir, limit=None, dr
             pipeline["agent_report"],
             output_dir,
         )
+        print(f"   저장 완료: {folder}", flush=True)
         results.append(
             {
                 "index": index,
@@ -131,4 +140,3 @@ def run_batch_workflow(client, model_name, input_csv, output_dir, limit=None, dr
         )
 
     return results
-
