@@ -1,4 +1,5 @@
 ﻿import os
+import csv
 import re
 import random
 from datetime import datetime
@@ -954,6 +955,46 @@ def section_download_button(label, content, filename_prefix, key):
     )
 
 
+WORKFLOW_INPUT_FIELDS = [
+    "enabled",
+    "content_goal",
+    "topic_text",
+    "brand_display",
+    "region_display",
+    "industry_name",
+    "target",
+    "pain",
+    "visual",
+    "tone",
+    "content_style",
+    "prompt_preset",
+    "creativity_mode",
+    "video_length",
+    "platform",
+]
+
+
+def read_workflow_input_rows(path="workflow_inputs.csv"):
+    if not os.path.exists(path):
+        return []
+
+    with open(path, "r", encoding="utf-8-sig", newline="") as file:
+        return list(csv.DictReader(file))
+
+
+def write_workflow_input_rows(rows, path="workflow_inputs.csv"):
+    with open(path, "w", encoding="utf-8-sig", newline="") as file:
+        writer = csv.DictWriter(file, fieldnames=WORKFLOW_INPUT_FIELDS)
+        writer.writeheader()
+        writer.writerows(rows)
+
+
+def append_workflow_input(row, path="workflow_inputs.csv"):
+    rows = read_workflow_input_rows(path)
+    rows.append(row)
+    write_workflow_input_rows(rows, path)
+
+
 def save_result(content, industry_name, region, topic_text):
 
     project_name = f"{industry_name}_{region}"
@@ -1042,6 +1083,154 @@ def custom_industry_profile(industry_name):
         "pain": f"{industry_name}만의 장점은 있지만 온라인 콘텐츠에서 그 매력이 구체적으로 보이지 않는 상황",
         "visual": f"{industry_name} 특유의 공간, 상품, 도구, 소품, 조명, 고객이 실제로 보는 장면",
     }
+
+
+with st.expander("자동화 작업 관리", expanded=False):
+    st.caption("여기서 추가한 작업은 workflow_inputs.csv에 저장되고, PowerShell 자동화 실행 때 사용됩니다.")
+
+    with st.form("workflow_task_form", clear_on_submit=False):
+        form_col1, form_col2 = st.columns(2)
+
+        with form_col1:
+            workflow_goal = st.selectbox(
+                "자동화 콘텐츠 목적",
+                [
+                    "신규 고객 유입",
+                    "문의/예약 전환",
+                    "브랜드 신뢰도 상승",
+                    "메뉴/상품 홍보",
+                    "이벤트/할인 홍보",
+                    "단골 고객 재방문 유도",
+                ],
+                key="workflow_goal",
+            )
+            workflow_topic = st.text_input(
+                "자동화 콘텐츠 주제",
+                placeholder="예: 인스타 안 하는 병원이 손해보는 이유",
+                key="workflow_topic",
+            )
+            workflow_brand = st.text_input(
+                "자동화 브랜드명",
+                placeholder="예: 쇼파크의원, 멘야쇼파크",
+                key="workflow_brand",
+            )
+            workflow_region = st.text_input(
+                "자동화 지역",
+                placeholder="예: 강남, 성수, 부산 서면",
+                key="workflow_region",
+            )
+
+        with form_col2:
+            workflow_industry_choice = st.selectbox(
+                "자동화 업종",
+                list(industries.keys()) + ["직접 입력"],
+                key="workflow_industry_choice",
+            )
+            workflow_custom_industry = st.text_input(
+                "자동화 직접 입력 업종",
+                placeholder="직접 입력을 선택했을 때만 사용",
+                key="workflow_custom_industry",
+            )
+            workflow_video_length = st.selectbox(
+                "자동화 영상 길이",
+                ["5초", "10초", "15초"],
+                index=1,
+                key="workflow_video_length",
+            )
+            workflow_platform = st.selectbox(
+                "자동화 게시 플랫폼",
+                ["인스타 릴스", "유튜브 쇼츠", "틱톡", "공통 숏폼"],
+                key="workflow_platform",
+            )
+
+        detail_col1, detail_col2 = st.columns(2)
+        with detail_col1:
+            workflow_style = st.selectbox(
+                "자동화 콘텐츠 스타일",
+                ["직설형", "신뢰형", "감성형", "고급형", "자극형"],
+                key="workflow_style",
+            )
+            workflow_preset = st.selectbox(
+                "자동화 프롬프트 프리셋",
+                [
+                    "기본형",
+                    "고객 설득형",
+                    "조회수 후킹형",
+                    "브랜드 고급형",
+                    "자영업자 공감형",
+                    "전환 집중형",
+                ],
+                key="workflow_preset",
+            )
+        with detail_col2:
+            workflow_creativity = st.selectbox(
+                "자동화 창의성 모드",
+                ["안정형", "균형형", "창의형", "실험형"],
+                index=1,
+                key="workflow_creativity",
+            )
+            workflow_enabled = st.checkbox(
+                "자동화 실행 대상에 포함",
+                value=True,
+                key="workflow_enabled",
+            )
+
+        workflow_submitted = st.form_submit_button("작업 목록에 추가")
+
+    if workflow_submitted:
+        if workflow_industry_choice == "직접 입력":
+            workflow_industry_name = workflow_custom_industry.strip()
+            workflow_industry = custom_industry_profile(workflow_industry_name)
+        else:
+            workflow_industry_name = workflow_industry_choice
+            workflow_industry = industries[workflow_industry_choice]
+
+        if not workflow_industry_name:
+            st.warning("자동화 업종을 입력해주세요.")
+        else:
+            workflow_topic_text = workflow_topic.strip() or f"{workflow_industry_name} 사장님이 인스타를 해야 하는 이유"
+            append_workflow_input(
+                {
+                    "enabled": "yes" if workflow_enabled else "no",
+                    "content_goal": workflow_goal,
+                    "topic_text": workflow_topic_text,
+                    "brand_display": workflow_brand.strip() or "미입력",
+                    "region_display": workflow_region.strip() or "미입력",
+                    "industry_name": workflow_industry_name,
+                    "target": workflow_industry["target"],
+                    "pain": workflow_industry["pain"],
+                    "visual": workflow_industry.get(
+                        "visual",
+                        f"{workflow_industry_name} 특유의 공간, 상품, 도구, 소품, 조명, 고객이 실제로 보는 장면",
+                    ),
+                    "tone": workflow_industry["tone"],
+                    "content_style": workflow_style,
+                    "prompt_preset": workflow_preset,
+                    "creativity_mode": workflow_creativity,
+                    "video_length": workflow_video_length,
+                    "platform": workflow_platform,
+                }
+            )
+            st.success("자동화 작업 목록에 추가했습니다.")
+
+    workflow_rows = read_workflow_input_rows()
+    if workflow_rows:
+        st.markdown("#### 저장된 자동화 작업")
+        preview_rows = [
+            {
+                "실행": row.get("enabled", ""),
+                "목적": row.get("content_goal", ""),
+                "주제": row.get("topic_text", ""),
+                "업종": row.get("industry_name", ""),
+                "지역": row.get("region_display", ""),
+                "플랫폼": row.get("platform", ""),
+            }
+            for row in workflow_rows
+        ]
+        st.dataframe(preview_rows, use_container_width=True, hide_index=True)
+        st.code("python .\\run_workflow.py --analyze-references --limit 1", language="powershell")
+    else:
+        st.info("아직 저장된 자동화 작업이 없습니다.")
 
 
 st.caption("필요한 정보를 빠르게 입력하세요.")
