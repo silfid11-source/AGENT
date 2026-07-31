@@ -2,6 +2,33 @@ from agent_rules import SHOWPARK_AGENT_RULES
 from reference_analyzer import load_reference_rules
 
 
+HANDOFF_CHAR_LIMIT = 600
+
+
+def compact_for_handoff(title, content, limit=HANDOFF_CHAR_LIMIT):
+    text = " ".join((content or "").split())
+    if len(text) <= limit:
+        return f"[{title}]\n{content.strip()}"
+
+    important_parts = []
+    for line in (content or "").splitlines():
+        clean_line = line.strip()
+        if not clean_line:
+            continue
+        if clean_line.startswith(("#", "-", "|")) or ":" in clean_line:
+            important_parts.append(clean_line)
+
+    compact = "\n".join(important_parts)
+    if len(compact) < 120:
+        compact = text
+
+    compact = compact[:limit].rstrip()
+    return f"""[{title} - 600자 핵심 전달본]
+{compact}
+
+원문은 작업 기록에 보관됨. 다음 에이전트는 위 핵심만 참고해서 중복 없이 이어서 작업할 것."""
+
+
 def ask_agent(client, model_name, agent_name, prompt):
     reference_rules = load_reference_rules()
     reference_block = ""
@@ -68,6 +95,7 @@ def run_showpark_agent_pipeline(client, model_name, context):
 - 전체 메시지 한 줄
 """,
     )
+    strategy_handoff = compact_for_handoff("기획 결과", strategy_result)
 
     copy_result = ask_agent(
         client,
@@ -76,8 +104,7 @@ def run_showpark_agent_pipeline(client, model_name, context):
         f"""
 {common_context}
 
-[기획 결과]
-{strategy_result}
+{strategy_handoff}
 
 [역할]
 썸네일, 릴스 대본, 캡션, 해시태그를 만든다.
@@ -92,6 +119,7 @@ def run_showpark_agent_pipeline(client, model_name, context):
 # 5. 해시태그 20개
 """,
     )
+    copy_handoff = compact_for_handoff("카피 결과", copy_result)
 
     image_result = ask_agent(
         client,
@@ -100,8 +128,7 @@ def run_showpark_agent_pipeline(client, model_name, context):
         f"""
 {common_context}
 
-[기획 결과]
-{strategy_result}
+{strategy_handoff}
 
 [역할]
 같은 주제라도 매번 다른 이미지가 나오도록 창의적인 이미지 프롬프트를 만든다.
@@ -118,6 +145,7 @@ def run_showpark_agent_pipeline(client, model_name, context):
 - 마지막에 공통으로 피해야 할 표현 작성
 """,
     )
+    image_handoff = compact_for_handoff("이미지 프롬프트", image_result)
 
     video_result = ask_agent(
         client,
@@ -126,8 +154,7 @@ def run_showpark_agent_pipeline(client, model_name, context):
         f"""
 {common_context}
 
-[기획 결과]
-{strategy_result}
+{strategy_handoff}
 
 [역할]
 영상 생성툴에 바로 넣을 수 있는 영상 프롬프트와 장면표를 만든다.
@@ -142,6 +169,7 @@ def run_showpark_agent_pipeline(client, model_name, context):
 | 5초 이후 |  |  |  |
 """,
     )
+    video_handoff = compact_for_handoff("영상 프롬프트", video_result)
 
     production_result = ask_agent(
         client,
@@ -150,17 +178,13 @@ def run_showpark_agent_pipeline(client, model_name, context):
         f"""
 {common_context}
 
-[기획 결과]
-{strategy_result}
+{strategy_handoff}
 
-[카피 결과]
-{copy_result}
+{copy_handoff}
 
-[이미지 프롬프트]
-{image_result}
+{image_handoff}
 
-[영상 프롬프트]
-{video_result}
+{video_handoff}
 
 [역할]
 게시 전 자막 문구와 제작 주의사항을 정리하고, 전체 결과의 약점을 짧게 점검한다.
@@ -178,6 +202,7 @@ def run_showpark_agent_pipeline(client, model_name, context):
 - 보완한 점 3개
 """,
     )
+    production_handoff = compact_for_handoff("제작 검수 결과", production_result)
 
     final_result = ask_agent(
         client,
@@ -194,19 +219,19 @@ def run_showpark_agent_pipeline(client, model_name, context):
 - 바로 복사해서 사용할 수 있는 최종본만 출력할 것
 
 [기획 에이전트]
-{strategy_result}
+{strategy_handoff}
 
 [카피 에이전트]
-{copy_result}
+{copy_handoff}
 
 [이미지 에이전트]
-{image_result}
+{image_handoff}
 
 [영상 에이전트]
-{video_result}
+{video_handoff}
 
 [검수 에이전트]
-{production_result}
+{production_handoff}
 """,
     )
 
@@ -270,7 +295,7 @@ def run_showpark_agent_pipeline(client, model_name, context):
 # 20. 최종 제작 순서
 
 [최종 콘텐츠 패키지]
-{final_result}
+{compact_for_handoff("최종 콘텐츠 패키지", final_result, limit=900)}
 """,
     )
 
