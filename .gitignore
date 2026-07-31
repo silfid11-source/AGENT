@@ -1,0 +1,30 @@
+# Secrets
+.env
+.env.*
+!.env.example
+
+# Python
+.venv/
+venv/
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+.Python
+
+# Streamlit/local runtime
+.streamlit/secrets.toml
+
+# Generated outputs
+projects/
+results/
+reels_result_*.txt
+reels_content_*.txt
+
+# Local editor/system files
+.vscode/
+.idea/
+*.log
+Thumbs.db
+.DS_Store
+
