@@ -56,7 +56,7 @@ def read_workflow_inputs(csv_path):
     return tasks
 
 
-def save_workflow_result(context, result, agent_report, output_dir):
+def save_workflow_result(context, result, agent_report, output_dir, video_production_package=""):
     now = datetime.now().strftime("%Y%m%d_%H%M%S")
     project_name = "_".join(
         [
@@ -72,9 +72,12 @@ def save_workflow_result(context, result, agent_report, output_dir):
     result_path = project_folder / "final_result.txt"
     report_path = project_folder / "agent_report.txt"
     summary_path = project_folder / "summary.txt"
+    video_package_path = project_folder / "video_production_package.txt"
 
     result_path.write_text(result, encoding="utf-8")
     report_path.write_text(agent_report, encoding="utf-8")
+    if video_production_package:
+        video_package_path.write_text(video_production_package, encoding="utf-8")
     summary_path.write_text(
         "\n".join(
             [
@@ -127,6 +130,7 @@ def run_batch_workflow(client, model_name, input_csv, output_dir, limit=None, dr
             pipeline["result"],
             pipeline["agent_report"],
             output_dir,
+            pipeline.get("video_production_package", ""),
         )
         print(f"   저장 완료: {folder}", flush=True)
         results.append(

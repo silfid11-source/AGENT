@@ -210,6 +210,70 @@ def run_showpark_agent_pipeline(client, model_name, context):
 """,
     )
 
+    video_production_package = ask_agent(
+        client,
+        model_name,
+        "영상 제작 패키지 에이전트",
+        f"""
+아래 최종 콘텐츠 패키지를 실제 영상 제작자가 바로 사용할 수 있는 제작 지시서로 확장해.
+
+[중요]
+- 실제 영상 파일을 생성하지는 말고, 영상 제작에 필요한 원고와 지시서까지 완성할 것
+- 얼굴 노출 없는 9:16 세로 숏폼 기준으로 작성할 것
+- ElevenLabs 같은 음성 AI에 넣기 쉬운 나레이션 원고를 포함할 것
+- CapCut, Premiere, VLLO 같은 편집툴에서 자막으로 옮기기 쉬운 텍스트를 포함할 것
+- 영상 생성툴에 넣을 프롬프트는 장면별로 나눠서 작성할 것
+- 업종 "{context["industry_name"]}"을 절대 일반화하지 말 것
+
+[출력 형식]
+# 11. 영상 콘셉트
+
+# 12. 나레이션 원고
+- 10초 버전
+- 15초 버전
+- 30초 버전
+
+# 13. 자막 파일용 텍스트
+- 한 줄 자막
+- 2줄 자막
+- 짧은 강조 자막
+
+# 14. 컷별 제작 지시서
+| 컷 | 시간 | 화면 | 카메라 | 자막 | 나레이션 |
+| 1 | 0~2초 |  |  |  |  |
+| 2 | 2~5초 |  |  |  |  |
+| 3 | 5초 이후 |  |  |  |  |
+
+# 15. 이미지 소스 제작 프롬프트
+- 컷별 대표 이미지 프롬프트
+- 한국어
+- 영어
+
+# 16. 영상 생성툴 입력 프롬프트
+- Kling/Runway/Pika/Higgsfield 등에 넣을 수 있게 작성
+- 한국어
+- 영어
+
+# 17. BGM/효과음 방향
+- 추천 분위기
+- 필요한 효과음
+- 피해야 할 소리
+
+# 18. 편집자 메모
+- 컷 전환
+- 자막 위치
+- 속도감
+- 색감
+
+# 19. 업로드 전 체크리스트
+
+# 20. 최종 제작 순서
+
+[최종 콘텐츠 패키지]
+{final_result}
+""",
+    )
+
     agent_report = "\n\n".join(
         [
             "# 분야별 에이전트 작업 기록",
@@ -223,10 +287,13 @@ def run_showpark_agent_pipeline(client, model_name, context):
             video_result,
             "## 5. 제작 검수 에이전트",
             production_result,
+            "## 6. 영상 제작 패키지 에이전트",
+            video_production_package,
         ]
     )
 
     return {
         "result": final_result,
         "agent_report": agent_report,
+        "video_production_package": video_production_package,
     }

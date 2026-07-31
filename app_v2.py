@@ -1236,6 +1236,9 @@ if "project_summary" not in st.session_state:
 if "agent_pipeline_report" not in st.session_state:
     st.session_state.agent_pipeline_report = ""
 
+if "video_production_package" not in st.session_state:
+    st.session_state.video_production_package = ""
+
 if generate or agent_generate:
     if model_mode == "고품질 모드" and not high_quality_confirmed:
         st.warning("고품질 모드를 사용하려면 비용 확인 체크박스를 선택해주세요.")
@@ -1300,8 +1303,15 @@ if generate or agent_generate:
 
         result = agent_pipeline["result"]
         st.session_state.agent_pipeline_report = agent_pipeline["agent_report"]
+        st.session_state.video_production_package = agent_pipeline.get(
+            "video_production_package",
+            "",
+        )
+        if st.session_state.video_production_package:
+            result = f"{result.strip()}\n\n{st.session_state.video_production_package.strip()}"
     else:
         st.session_state.agent_pipeline_report = ""
+        st.session_state.video_production_package = ""
         prompt = f"""
     중요:
 반드시 아래 10개 목차를 모두 작성한다.
@@ -1553,6 +1563,7 @@ if st.session_state.result:
             "제작 노트",
             "체크리스트",
             "작업 세트",
+            "영상 제작 패키지",
             "전체 결과",
         ]
     )
@@ -2081,6 +2092,26 @@ if st.session_state.result:
             )
 
     with result_tabs[11]:
+        video_package_text = get_sections_text(sections, list(range(11, 21)))
+        if video_package_text:
+            st.markdown(video_package_text)
+        else:
+            st.info("분야별 에이전트 실행을 사용하면 영상 제작 패키지가 생성됩니다.")
+
+        st.text_area(
+            "영상 제작 패키지 복사용",
+            value=video_package_text,
+            height=460,
+            key="copy_video_production_package",
+        )
+        section_download_button(
+            "영상 제작 패키지 TXT 다운로드",
+            video_package_text,
+            "video_production_package",
+            "download_video_production_package",
+        )
+
+    with result_tabs[12]:
         st.markdown(st.session_state.result)
         st.text_area(
             "전체 결과 복사용",
@@ -2105,6 +2136,7 @@ if st.session_state.result:
         st.session_state.quality_check_result = ""
         st.session_state.project_summary = {}
         st.session_state.agent_pipeline_report = ""
+        st.session_state.video_production_package = ""
         st.rerun()
 
     st.divider()
