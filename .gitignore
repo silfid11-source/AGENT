@@ -18,6 +18,7 @@ __pycache__/
 # Generated outputs
 projects/
 results/
+workflow_outputs/
 reels_result_*.txt
 reels_content_*.txt
 
@@ -27,4 +28,3 @@ reels_content_*.txt
 *.log
 Thumbs.db
 .DS_Store
-
