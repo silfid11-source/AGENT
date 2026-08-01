@@ -1476,18 +1476,6 @@ def render_reference_learning_agent():
                     else:
                         st.warning("지원하는 이미지 파일을 선택해주세요.")
 
-    with st.expander("레퍼런스 넣는 위치", expanded=False):
-        st.markdown(
-            """
-- `references/brand_guides`: 브랜드 톤, 금지 표현, 고객 정보
-- `references/captions`: 마음에 드는 인스타 캡션
-- `references/scripts`: 릴스 대본 예시
-- `references/image_prompts`: 이미지 프롬프트 예시
-- `references/video_prompts`: 영상 프롬프트 예시
-- `references/urls.txt`: 참고 URL을 한 줄에 하나씩 입력
-"""
-        )
-
     ref_model_label = st.selectbox(
         "레퍼런스 학습 모델",
         ["일반 모드", "고품질 모드"],
