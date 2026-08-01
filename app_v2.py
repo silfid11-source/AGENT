@@ -1307,6 +1307,94 @@ def render_generation_history():
                     st.caption(f"원본 파일: {item['file_path']}")
 
 
+def read_text_file(path):
+    with open(path, "r", encoding="utf-8", errors="ignore") as file:
+        return file.read()
+
+
+def load_workflow_output_history(base_dir="workflow_outputs", limit=10):
+    if not os.path.exists(base_dir):
+        return []
+
+    history = []
+    for folder_name in os.listdir(base_dir):
+        folder_path = os.path.join(base_dir, folder_name)
+        if not os.path.isdir(folder_path):
+            continue
+
+        result_path = os.path.join(folder_path, "final_result.txt")
+        if not os.path.exists(result_path):
+            continue
+
+        summary_path = os.path.join(folder_path, "summary.txt")
+        report_path = os.path.join(folder_path, "agent_report.txt")
+        modified_time = os.path.getmtime(result_path)
+
+        history.append(
+            {
+                "folder_name": folder_name,
+                "folder_path": folder_path,
+                "result_path": result_path,
+                "summary_path": summary_path if os.path.exists(summary_path) else "",
+                "report_path": report_path if os.path.exists(report_path) else "",
+                "saved_time": datetime.fromtimestamp(modified_time).strftime("%Y-%m-%d %H:%M"),
+                "modified_time": modified_time,
+            }
+        )
+
+    return sorted(history, key=lambda item: item["modified_time"], reverse=True)[:limit]
+
+
+def render_workflow_output_history():
+    with st.expander("최근 자동화 결과", expanded=False):
+        history = load_workflow_output_history()
+
+        if not history:
+            st.info("아직 저장된 자동화 결과가 없습니다.")
+            return
+
+        result_options = {
+            f"{item['saved_time']} / {item['folder_name']}": index
+            for index, item in enumerate(history)
+        }
+        selected_label = st.selectbox(
+            "확인할 결과",
+            list(result_options.keys()),
+            key="workflow_output_history_selected",
+        )
+        selected_item = history[result_options[selected_label]]
+
+        st.caption(f"결과 폴더: {selected_item['folder_path']}")
+
+        result_content = read_text_file(selected_item["result_path"])
+        if selected_item["summary_path"]:
+            with st.expander("요약", expanded=True):
+                st.text(read_text_file(selected_item["summary_path"]))
+
+        st.text_area(
+            "최종 결과",
+            value=result_content,
+            height=360,
+            key="workflow_output_history_result",
+        )
+        st.download_button(
+            "최종 결과 다운로드",
+            result_content,
+            file_name=f"{clean_filename(selected_item['folder_name'])}_final_result.txt",
+            mime="text/plain",
+            key="workflow_output_history_download",
+        )
+
+        if selected_item["report_path"]:
+            with st.expander("에이전트 리포트", expanded=False):
+                st.text_area(
+                    "리포트",
+                    value=read_text_file(selected_item["report_path"]),
+                    height=260,
+                    key="workflow_output_history_report",
+                )
+
+
 REFERENCE_FOLDERS = {
     "brand_guides": "브랜드 톤/금지 표현",
     "captions": "인스타 캡션 예시",
@@ -1811,6 +1899,8 @@ with st.expander("자동화 작업 추가", expanded=True):
     else:
         st.info("아직 저장된 자동화 작업이 없습니다.")
 
+
+render_workflow_output_history()
 
 st.markdown("## 수동 생성 도구")
 st.caption("테스트나 급한 1건 제작이 필요할 때 사용하는 보조 영역입니다.")
