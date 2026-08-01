@@ -958,6 +958,7 @@ def section_download_button(label, content, filename_prefix, key):
 
 WORKFLOW_INPUT_FIELDS = [
     "enabled",
+    "status",
     "content_goal",
     "topic_text",
     "brand_display",
@@ -973,6 +974,12 @@ WORKFLOW_INPUT_FIELDS = [
     "video_length",
     "platform",
 ]
+WORKFLOW_STATUS_OPTIONS = ["대기", "완료", "오류"]
+
+
+def normalize_workflow_status(value):
+    status = (value or "").strip()
+    return status if status in WORKFLOW_STATUS_OPTIONS else "대기"
 
 
 def read_workflow_input_rows(path="workflow_inputs.csv"):
@@ -980,12 +987,17 @@ def read_workflow_input_rows(path="workflow_inputs.csv"):
         return []
 
     with open(path, "r", encoding="utf-8-sig", newline="") as file:
-        return list(csv.DictReader(file))
+        rows = list(csv.DictReader(file))
+
+    for row in rows:
+        row["status"] = normalize_workflow_status(row.get("status"))
+
+    return rows
 
 
 def write_workflow_input_rows(rows, path="workflow_inputs.csv"):
     with open(path, "w", encoding="utf-8-sig", newline="") as file:
-        writer = csv.DictWriter(file, fieldnames=WORKFLOW_INPUT_FIELDS)
+        writer = csv.DictWriter(file, fieldnames=WORKFLOW_INPUT_FIELDS, extrasaction="ignore")
         writer.writeheader()
         writer.writerows(rows)
 
@@ -1450,6 +1462,7 @@ with st.expander("자동화 작업 추가", expanded=True):
             append_workflow_input(
                 {
                     "enabled": "yes" if workflow_enabled else "no",
+                    "status": "대기",
                     "content_goal": workflow_goal,
                     "topic_text": workflow_topic_text,
                     "brand_display": workflow_brand.strip() or "미입력",
@@ -1477,6 +1490,7 @@ with st.expander("자동화 작업 추가", expanded=True):
         preview_rows = [
             {
                 "실행": row.get("enabled", ""),
+                "상태": normalize_workflow_status(row.get("status")),
                 "목적": row.get("content_goal", ""),
                 "주제": row.get("topic_text", ""),
                 "업종": row.get("industry_name", ""),

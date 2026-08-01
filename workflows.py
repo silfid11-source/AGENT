@@ -22,6 +22,30 @@ DEFAULT_CONTEXT = {
     "video_length": "10초",
     "platform": "인스타 릴스",
 }
+WORKFLOW_INPUT_FIELDS = [
+    "enabled",
+    "status",
+    "content_goal",
+    "topic_text",
+    "brand_display",
+    "region_display",
+    "industry_name",
+    "target",
+    "pain",
+    "visual",
+    "tone",
+    "content_style",
+    "prompt_preset",
+    "creativity_mode",
+    "video_length",
+    "platform",
+]
+WORKFLOW_STATUS_OPTIONS = {"대기", "완료", "오류"}
+
+
+def normalize_workflow_status(value):
+    status = (value or "").strip()
+    return status if status in WORKFLOW_STATUS_OPTIONS else "대기"
 
 
 def clean_filename(value):
@@ -40,7 +64,7 @@ def read_workflow_inputs(csv_path):
         rows = list(csv.DictReader(file))
 
     tasks = []
-    for row in rows:
+    for row_index, row in enumerate(rows):
         enabled = (row.get("enabled") or "yes").strip().lower()
         if enabled in {"no", "n", "false", "0", "아니오"}:
             continue
@@ -51,9 +75,35 @@ def read_workflow_inputs(csv_path):
             if value:
                 context[key] = value
 
+        context["_workflow_row_index"] = row_index
         tasks.append(context)
 
     return tasks
+
+
+def update_workflow_input_status(csv_path, row_index, status):
+    if row_index is None:
+        return
+
+    path = Path(csv_path)
+    if not path.exists():
+        return
+
+    with path.open("r", encoding="utf-8-sig", newline="") as file:
+        rows = list(csv.DictReader(file))
+
+    if row_index < 0 or row_index >= len(rows):
+        return
+
+    for row in rows:
+        row["status"] = normalize_workflow_status(row.get("status"))
+
+    rows[row_index]["status"] = normalize_workflow_status(status)
+
+    with path.open("w", encoding="utf-8-sig", newline="") as file:
+        writer = csv.DictWriter(file, fieldnames=WORKFLOW_INPUT_FIELDS, extrasaction="ignore")
+        writer.writeheader()
+        writer.writerows(rows)
 
 
 def save_workflow_result(context, result, agent_report, output_dir, video_production_package=""):
@@ -104,6 +154,7 @@ def run_batch_workflow(client, model_name, input_csv, output_dir, limit=None, dr
 
     results = []
     for index, context in enumerate(tasks, start=1):
+        row_index = context.pop("_workflow_row_index", None)
         if dry_run:
             print(
                 f"{index}. 입력 점검: {context['industry_name']} - {context['topic_text']}",
@@ -124,23 +175,37 @@ def run_batch_workflow(client, model_name, input_csv, output_dir, limit=None, dr
             f"{index}. 콘텐츠 생성 중: {context['industry_name']} - {context['topic_text']}",
             flush=True,
         )
-        pipeline = run_showpark_agent_pipeline(client, model_name, context)
-        folder = save_workflow_result(
-            context,
-            pipeline["result"],
-            pipeline["agent_report"],
-            output_dir,
-            pipeline.get("video_production_package", ""),
-        )
-        print(f"   저장 완료: {folder}", flush=True)
-        results.append(
-            {
-                "index": index,
-                "topic": context["topic_text"],
-                "industry": context["industry_name"],
-                "status": "saved",
-                "folder": str(folder),
-            }
-        )
+        try:
+            pipeline = run_showpark_agent_pipeline(client, model_name, context)
+            folder = save_workflow_result(
+                context,
+                pipeline["result"],
+                pipeline["agent_report"],
+                output_dir,
+                pipeline.get("video_production_package", ""),
+            )
+            update_workflow_input_status(input_csv, row_index, "완료")
+            print(f"   저장 완료: {folder}", flush=True)
+            results.append(
+                {
+                    "index": index,
+                    "topic": context["topic_text"],
+                    "industry": context["industry_name"],
+                    "status": "완료",
+                    "folder": str(folder),
+                }
+            )
+        except Exception as error:
+            update_workflow_input_status(input_csv, row_index, "오류")
+            print(f"   오류: {error}", flush=True)
+            results.append(
+                {
+                    "index": index,
+                    "topic": context["topic_text"],
+                    "industry": context["industry_name"],
+                    "status": "오류",
+                    "folder": "",
+                }
+            )
 
     return results
