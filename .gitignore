@@ -35,5 +35,6 @@ references/**/*.csv
 .vscode/
 .idea/
 *.log
+test.txt
 Thumbs.db
 .DS_Store

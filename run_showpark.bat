@@ -28,11 +28,27 @@ if exist ".venv\pyvenv.cfg" (
 
 if not exist ".venv\Scripts\python.exe" (
     echo Creating virtual environment...
-    if exist "%LOCALAPPDATA%\Python\pythoncore-3.14-64\python.exe" (
+    if exist "C:\Users\silfi\AppData\Local\Python\pythoncore-3.14-64\python.exe" (
+        "C:\Users\silfi\AppData\Local\Python\pythoncore-3.14-64\python.exe" -m venv .venv
+    ) else if exist "%LOCALAPPDATA%\Python\pythoncore-3.14-64\python.exe" (
         "%LOCALAPPDATA%\Python\pythoncore-3.14-64\python.exe" -m venv .venv
+    ) else if exist "C:\Users\silfi\AppData\Local\Python\bin\python.exe" (
+        "C:\Users\silfi\AppData\Local\Python\bin\python.exe" -m venv .venv
+    ) else if exist "%LOCALAPPDATA%\Python\bin\python.exe" (
+        "%LOCALAPPDATA%\Python\bin\python.exe" -m venv .venv
     ) else (
-        py -m venv .venv
+        python -m venv .venv
     )
+)
+
+if not exist ".venv\Scripts\python.exe" (
+    echo.
+    echo Python virtual environment could not be created.
+    echo Please run this once in PowerShell:
+    echo python -m venv .venv
+    echo .venv\Scripts\python.exe -m pip install streamlit openai python-dotenv
+    pause
+    exit /b 1
 )
 
 echo Checking packages...
