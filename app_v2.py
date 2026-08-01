@@ -1024,6 +1024,26 @@ def append_workflow_input(row, path="workflow_inputs.csv"):
     write_workflow_input_rows(rows, path)
 
 
+def update_workflow_input_row(row_index, updates, path="workflow_inputs.csv"):
+    rows = read_workflow_input_rows(path)
+    if row_index < 0 or row_index >= len(rows):
+        return False
+
+    rows[row_index].update(updates)
+    write_workflow_input_rows(rows, path)
+    return True
+
+
+def delete_workflow_input_row(row_index, path="workflow_inputs.csv"):
+    rows = read_workflow_input_rows(path)
+    if row_index < 0 or row_index >= len(rows):
+        return False
+
+    rows.pop(row_index)
+    write_workflow_input_rows(rows, path)
+    return True
+
+
 def save_result(content, industry_name, region, topic_text):
 
     project_name = f"{industry_name}_{region}"
@@ -1658,6 +1678,45 @@ with st.expander("자동화 작업 추가", expanded=True):
             for row in workflow_rows
         ]
         st.dataframe(preview_rows, width="stretch", hide_index=True)
+
+        with st.expander("선택 작업 관리", expanded=False):
+            task_options = {
+                f"{index + 1}. {row.get('topic_text', '제목 없음')} / {row.get('industry_name', '업종 없음')}": index
+                for index, row in enumerate(workflow_rows)
+            }
+            selected_task_label = st.selectbox(
+                "관리할 작업",
+                list(task_options.keys()),
+                key="workflow_manage_selected_task",
+            )
+            selected_task_index = task_options[selected_task_label]
+            selected_task = workflow_rows[selected_task_index]
+
+            manage_col1, manage_col2, manage_col3 = st.columns(3)
+            with manage_col1:
+                if st.button("대기로 변경", key="workflow_reset_status_button"):
+                    update_workflow_input_row(selected_task_index, {"status": "대기"})
+                    st.success("작업 상태를 대기로 변경했습니다.")
+                    st.rerun()
+
+            with manage_col2:
+                next_enabled = "no" if selected_task.get("enabled", "yes") == "yes" else "yes"
+                enabled_label = "실행 제외" if next_enabled == "no" else "실행 포함"
+                if st.button(enabled_label, key="workflow_toggle_enabled_button"):
+                    update_workflow_input_row(selected_task_index, {"enabled": next_enabled})
+                    st.success(f"작업을 {enabled_label} 상태로 변경했습니다.")
+                    st.rerun()
+
+            with manage_col3:
+                delete_confirmed = st.checkbox(
+                    "삭제 확인",
+                    key="workflow_delete_confirmed",
+                )
+                if st.button("삭제", key="workflow_delete_button", disabled=not delete_confirmed):
+                    delete_workflow_input_row(selected_task_index)
+                    st.success("작업을 삭제했습니다.")
+                    st.rerun()
+
         st.code("python .\\run_workflow.py --analyze-references", language="powershell")
     else:
         st.info("아직 저장된 자동화 작업이 없습니다.")
