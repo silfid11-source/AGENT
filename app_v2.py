@@ -8,6 +8,7 @@ import streamlit as st
 from dotenv import load_dotenv
 from openai import OpenAI
 from agents import run_showpark_agent_pipeline
+from reference_analyzer import analyze_references, ensure_reference_folders, load_reference_rules
 
 
 load_dotenv()
@@ -98,9 +99,9 @@ st.markdown(
 
 st.markdown("# 🎬 ShowPark AI Studio")
 st.markdown(
-    "### 주제 하나로 릴스 대본, 이미지 프롬프트, 영상 프롬프트, 캡션, 해시태그까지 한 번에 생성합니다."
+    "### 레퍼런스를 학습하고 자동화 작업 목록으로 숏폼 콘텐츠를 제작합니다."
 )
-st.caption("개인용 숏폼 콘텐츠 제작 AI 스튜디오")
+st.caption("자동화 중심 숏폼 콘텐츠 제작 AI 스튜디오")
 
 today_key = datetime.now().strftime("%Y-%m-%d")
 
@@ -1203,7 +1204,7 @@ def render_generation_history():
 
                 with preview_col:
                     if item["image_file"]:
-                        st.image(item["image_file"], use_container_width=True)
+                        st.image(item["image_file"], width="stretch")
                     else:
                         st.markdown(
                             """
@@ -1234,6 +1235,100 @@ def render_generation_history():
                         key=f"history_image_prompt_{index}",
                     )
                     st.caption(f"원본 파일: {item['file_path']}")
+
+
+REFERENCE_FOLDERS = {
+    "brand_guides": "브랜드 톤/금지 표현",
+    "captions": "인스타 캡션 예시",
+    "scripts": "릴스 대본 예시",
+    "image_prompts": "이미지 프롬프트 예시",
+    "video_prompts": "영상 프롬프트 예시",
+}
+
+
+def count_reference_files(base_dir="references"):
+    ensure_reference_folders(base_dir)
+    counts = {}
+
+    for folder, label in REFERENCE_FOLDERS.items():
+        folder_path = os.path.join(base_dir, folder)
+        file_count = 0
+
+        if os.path.exists(folder_path):
+            for file_name in os.listdir(folder_path):
+                if file_name.lower().endswith((".txt", ".md", ".csv")):
+                    file_count += 1
+
+        counts[label] = file_count
+
+    urls_path = os.path.join(base_dir, "urls.txt")
+    if os.path.exists(urls_path):
+        with open(urls_path, "r", encoding="utf-8", errors="ignore") as file:
+            counts["참고 URL"] = len(
+                [
+                    line
+                    for line in file.read().splitlines()
+                    if line.strip().startswith(("http://", "https://"))
+                ]
+            )
+    else:
+        counts["참고 URL"] = 0
+
+    return counts
+
+
+def render_reference_learning_agent():
+    st.markdown("## 레퍼런스 학습 에이전트")
+    st.caption("마음에 드는 예시를 넣어두면 자동화 결과의 문체, 구성, 이미지/영상 프롬프트 스타일에 반영합니다.")
+
+    reference_counts = count_reference_files()
+    count_cols = st.columns(3)
+    for index, (label, count) in enumerate(reference_counts.items()):
+        count_cols[index % 3].metric(label, f"{count}개")
+
+    rules = load_reference_rules()
+    if rules:
+        st.success("학습 규칙이 준비되어 있습니다. 자동화 실행 때 이 스타일을 반영할 수 있습니다.")
+        with st.expander("현재 레퍼런스 학습 규칙 보기", expanded=False):
+            st.markdown(rules)
+    else:
+        st.info("아직 학습된 레퍼런스 규칙이 없습니다. 예시 파일을 넣은 뒤 학습을 실행하세요.")
+
+    with st.expander("레퍼런스 넣는 위치", expanded=False):
+        st.markdown(
+            """
+- `references/brand_guides`: 브랜드 톤, 금지 표현, 고객 정보
+- `references/captions`: 마음에 드는 인스타 캡션
+- `references/scripts`: 릴스 대본 예시
+- `references/image_prompts`: 이미지 프롬프트 예시
+- `references/video_prompts`: 영상 프롬프트 예시
+- `references/urls.txt`: 참고 URL을 한 줄에 하나씩 입력
+"""
+        )
+
+    ref_model_label = st.selectbox(
+        "레퍼런스 학습 모델",
+        ["일반 모드", "고품질 모드"],
+        key="reference_learning_model",
+    )
+    ref_model = {
+        "일반 모드": "gpt-5-mini",
+        "고품질 모드": "gpt-5",
+    }[ref_model_label]
+
+    if st.button("레퍼런스 학습 실행", key="analyze_references_button"):
+        with st.spinner("레퍼런스 학습 에이전트가 예시 스타일을 분석 중입니다..."):
+            learned_rules = analyze_references(
+                client=client,
+                model_name=ref_model,
+                base_dir="references",
+            )
+
+        if learned_rules:
+            st.success("레퍼런스 학습이 완료되었습니다.")
+            st.rerun()
+        else:
+            st.warning("분석할 레퍼런스 파일이 없습니다. 예시 파일을 먼저 넣어주세요.")
 def custom_industry_profile(industry_name):
     return {
         "target": f"{industry_name} 운영자 또는 대표님",
@@ -1243,7 +1338,12 @@ def custom_industry_profile(industry_name):
     }
 
 
-with st.expander("자동화 작업 관리", expanded=False):
+render_reference_learning_agent()
+
+st.markdown("## 자동화 작업 관리")
+st.caption("여러 콘텐츠 작업을 목록으로 쌓아두고, 레퍼런스 학습 결과를 반영해 자동으로 제작합니다.")
+
+with st.expander("자동화 작업 추가", expanded=True):
     st.caption("여기서 추가한 작업은 workflow_inputs.csv에 저장되고, PowerShell 자동화 실행 때 사용됩니다.")
 
     with st.form("workflow_task_form", clear_on_submit=False):
@@ -1385,13 +1485,14 @@ with st.expander("자동화 작업 관리", expanded=False):
             }
             for row in workflow_rows
         ]
-        st.dataframe(preview_rows, use_container_width=True, hide_index=True)
-        st.code("python .\\run_workflow.py --analyze-references --limit 1", language="powershell")
+        st.dataframe(preview_rows, width="stretch", hide_index=True)
+        st.code("python .\\run_workflow.py --analyze-references", language="powershell")
     else:
         st.info("아직 저장된 자동화 작업이 없습니다.")
 
 
-st.caption("필요한 정보를 빠르게 입력하세요.")
+st.markdown("## 수동 생성 도구")
+st.caption("테스트나 급한 1건 제작이 필요할 때 사용하는 보조 영역입니다.")
 
 input_col1, input_col2 = st.columns(2)
 
