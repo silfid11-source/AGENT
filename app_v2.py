@@ -1044,6 +1044,28 @@ def delete_workflow_input_row(row_index, path="workflow_inputs.csv"):
     return True
 
 
+def bulk_update_workflow_rows(predicate, updates, path="workflow_inputs.csv"):
+    rows = read_workflow_input_rows(path)
+    updated_count = 0
+
+    for row in rows:
+        if predicate(row):
+            row.update(updates)
+            updated_count += 1
+
+    if updated_count:
+        write_workflow_input_rows(rows, path)
+
+    return updated_count
+
+
+def count_workflow_rows_by_status(rows):
+    counts = {status: 0 for status in WORKFLOW_STATUS_OPTIONS}
+    for row in rows:
+        counts[normalize_workflow_status(row.get("status"))] += 1
+    return counts
+
+
 def save_result(content, industry_name, region, topic_text):
 
     project_name = f"{industry_name}_{region}"
@@ -1665,6 +1687,50 @@ with st.expander("자동화 작업 추가", expanded=True):
     workflow_rows = read_workflow_input_rows()
     if workflow_rows:
         st.markdown("#### 저장된 자동화 작업")
+        status_counts = count_workflow_rows_by_status(workflow_rows)
+        enabled_count = len(
+            [
+                row
+                for row in workflow_rows
+                if (row.get("enabled") or "yes").strip().lower() not in {"no", "n", "false", "0", "아니오"}
+            ]
+        )
+        summary_col1, summary_col2, summary_col3, summary_col4 = st.columns(4)
+        summary_col1.metric("전체", f"{len(workflow_rows)}개")
+        summary_col2.metric("대기", f"{status_counts['대기']}개")
+        summary_col3.metric("완료", f"{status_counts['완료']}개")
+        summary_col4.metric("오류", f"{status_counts['오류']}개")
+
+        filter_col1, filter_col2 = st.columns(2)
+        with filter_col1:
+            workflow_status_filter = st.selectbox(
+                "상태 필터",
+                ["전체"] + WORKFLOW_STATUS_OPTIONS,
+                key="workflow_status_filter",
+            )
+        with filter_col2:
+            workflow_enabled_filter = st.selectbox(
+                "실행 필터",
+                ["전체", "실행 포함", "실행 제외"],
+                key="workflow_enabled_filter",
+            )
+
+        filtered_workflow_rows = []
+        for index, row in enumerate(workflow_rows):
+            status = normalize_workflow_status(row.get("status"))
+            enabled = (row.get("enabled") or "yes").strip().lower()
+            is_enabled = enabled not in {"no", "n", "false", "0", "아니오"}
+
+            if workflow_status_filter != "전체" and status != workflow_status_filter:
+                continue
+            if workflow_enabled_filter == "실행 포함" and not is_enabled:
+                continue
+            if workflow_enabled_filter == "실행 제외" and is_enabled:
+                continue
+
+            filtered_workflow_rows.append((index, row))
+
+        st.caption(f"실행 대상 {enabled_count}개 / 현재 표시 {len(filtered_workflow_rows)}개")
         preview_rows = [
             {
                 "실행": row.get("enabled", ""),
@@ -1675,47 +1741,71 @@ with st.expander("자동화 작업 추가", expanded=True):
                 "지역": row.get("region_display", ""),
                 "플랫폼": row.get("platform", ""),
             }
-            for row in workflow_rows
+            for _, row in filtered_workflow_rows
         ]
-        st.dataframe(preview_rows, width="stretch", hide_index=True)
+        if preview_rows:
+            st.dataframe(preview_rows, width="stretch", hide_index=True)
+        else:
+            st.info("필터 조건에 맞는 작업이 없습니다.")
+
+        action_col1, action_col2 = st.columns(2)
+        with action_col1:
+            if st.button("완료 작업을 대기로 변경", key="workflow_reset_completed_button"):
+                updated_count = bulk_update_workflow_rows(
+                    lambda row: normalize_workflow_status(row.get("status")) == "완료",
+                    {"status": "대기"},
+                )
+                st.success(f"{updated_count}개 작업을 대기로 변경했습니다.")
+                st.rerun()
+        with action_col2:
+            if st.button("오류 작업을 대기로 변경", key="workflow_reset_failed_button"):
+                updated_count = bulk_update_workflow_rows(
+                    lambda row: normalize_workflow_status(row.get("status")) == "오류",
+                    {"status": "대기"},
+                )
+                st.success(f"{updated_count}개 작업을 대기로 변경했습니다.")
+                st.rerun()
 
         with st.expander("선택 작업 관리", expanded=False):
             task_options = {
                 f"{index + 1}. {row.get('topic_text', '제목 없음')} / {row.get('industry_name', '업종 없음')}": index
-                for index, row in enumerate(workflow_rows)
+                for index, row in filtered_workflow_rows
             }
-            selected_task_label = st.selectbox(
-                "관리할 작업",
-                list(task_options.keys()),
-                key="workflow_manage_selected_task",
-            )
-            selected_task_index = task_options[selected_task_label]
-            selected_task = workflow_rows[selected_task_index]
-
-            manage_col1, manage_col2, manage_col3 = st.columns(3)
-            with manage_col1:
-                if st.button("대기로 변경", key="workflow_reset_status_button"):
-                    update_workflow_input_row(selected_task_index, {"status": "대기"})
-                    st.success("작업 상태를 대기로 변경했습니다.")
-                    st.rerun()
-
-            with manage_col2:
-                next_enabled = "no" if selected_task.get("enabled", "yes") == "yes" else "yes"
-                enabled_label = "실행 제외" if next_enabled == "no" else "실행 포함"
-                if st.button(enabled_label, key="workflow_toggle_enabled_button"):
-                    update_workflow_input_row(selected_task_index, {"enabled": next_enabled})
-                    st.success(f"작업을 {enabled_label} 상태로 변경했습니다.")
-                    st.rerun()
-
-            with manage_col3:
-                delete_confirmed = st.checkbox(
-                    "삭제 확인",
-                    key="workflow_delete_confirmed",
+            if task_options:
+                selected_task_label = st.selectbox(
+                    "관리할 작업",
+                    list(task_options.keys()),
+                    key="workflow_manage_selected_task",
                 )
-                if st.button("삭제", key="workflow_delete_button", disabled=not delete_confirmed):
-                    delete_workflow_input_row(selected_task_index)
-                    st.success("작업을 삭제했습니다.")
-                    st.rerun()
+                selected_task_index = task_options[selected_task_label]
+                selected_task = workflow_rows[selected_task_index]
+
+                manage_col1, manage_col2, manage_col3 = st.columns(3)
+                with manage_col1:
+                    if st.button("대기로 변경", key="workflow_reset_status_button"):
+                        update_workflow_input_row(selected_task_index, {"status": "대기"})
+                        st.success("작업 상태를 대기로 변경했습니다.")
+                        st.rerun()
+
+                with manage_col2:
+                    next_enabled = "no" if selected_task.get("enabled", "yes") == "yes" else "yes"
+                    enabled_label = "실행 제외" if next_enabled == "no" else "실행 포함"
+                    if st.button(enabled_label, key="workflow_toggle_enabled_button"):
+                        update_workflow_input_row(selected_task_index, {"enabled": next_enabled})
+                        st.success(f"작업을 {enabled_label} 상태로 변경했습니다.")
+                        st.rerun()
+
+                with manage_col3:
+                    delete_confirmed = st.checkbox(
+                        "삭제 확인",
+                        key="workflow_delete_confirmed",
+                    )
+                    if st.button("삭제", key="workflow_delete_button", disabled=not delete_confirmed):
+                        delete_workflow_input_row(selected_task_index)
+                        st.success("작업을 삭제했습니다.")
+                        st.rerun()
+            else:
+                st.info("관리할 작업이 없습니다.")
 
         st.code("python .\\run_workflow.py --analyze-references", language="powershell")
     else:
