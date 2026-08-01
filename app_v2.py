@@ -88,6 +88,22 @@ st.markdown(
         border: 1px solid #374151;
     }
 
+    [data-testid="stMetric"] {
+        padding: 4px 0 8px;
+    }
+
+    [data-testid="stMetricLabel"] p {
+        font-size: 14px !important;
+        line-height: 1.35 !important;
+        color: #d1d5db !important;
+    }
+
+    [data-testid="stMetricValue"] {
+        font-size: 28px !important;
+        line-height: 1.15 !important;
+        font-weight: 700 !important;
+    }
+
     .block-container {
         padding-top: 3rem;
         max-width: 850px;
@@ -1256,6 +1272,14 @@ REFERENCE_FOLDERS = {
     "image_prompts": "이미지 프롬프트 예시",
     "video_prompts": "영상 프롬프트 예시",
 }
+REFERENCE_INPUT_OPTIONS = {
+    "브랜드 톤/금지 표현": "brand_guides",
+    "인스타 캡션 예시": "captions",
+    "릴스 대본 예시": "scripts",
+    "이미지 프롬프트 예시": "image_prompts",
+    "영상 프롬프트 예시": "video_prompts",
+}
+REFERENCE_IMAGE_EXTENSIONS = (".png", ".jpg", ".jpeg", ".webp")
 
 
 def count_reference_files(base_dir="references"):
@@ -1269,6 +1293,8 @@ def count_reference_files(base_dir="references"):
         if os.path.exists(folder_path):
             for file_name in os.listdir(folder_path):
                 if file_name.lower().endswith((".txt", ".md", ".csv")):
+                    file_count += 1
+                elif folder == "image_prompts" and file_name.lower().endswith(REFERENCE_IMAGE_EXTENSIONS):
                     file_count += 1
 
         counts[label] = file_count
@@ -1289,6 +1315,80 @@ def count_reference_files(base_dir="references"):
     return counts
 
 
+def save_reference_text(category, title, content, base_dir="references"):
+    folder = REFERENCE_INPUT_OPTIONS[category]
+    folder_path = os.path.join(base_dir, folder)
+    os.makedirs(folder_path, exist_ok=True)
+
+    now = datetime.now().strftime("%Y%m%d_%H%M%S")
+    file_title = clean_filename(title or category)
+    file_path = os.path.join(folder_path, f"{now}_{file_title}.txt")
+
+    with open(file_path, "w", encoding="utf-8") as file:
+        file.write(content.strip())
+
+    return file_path
+
+
+def append_reference_urls(urls_text, base_dir="references"):
+    ensure_reference_folders(base_dir)
+    urls = [
+        line.strip()
+        for line in urls_text.splitlines()
+        if line.strip().startswith(("http://", "https://"))
+    ]
+
+    if not urls:
+        return 0
+
+    urls_path = os.path.join(base_dir, "urls.txt")
+    existing_urls = set()
+    if os.path.exists(urls_path):
+        with open(urls_path, "r", encoding="utf-8", errors="ignore") as file:
+            existing_urls = {
+                line.strip()
+                for line in file.read().splitlines()
+                if line.strip().startswith(("http://", "https://"))
+            }
+
+    new_urls = [url for url in urls if url not in existing_urls]
+    if not new_urls:
+        return 0
+
+    with open(urls_path, "a", encoding="utf-8") as file:
+        if existing_urls:
+            file.write("\n")
+        file.write("\n".join(new_urls))
+        file.write("\n")
+
+    return len(new_urls)
+
+
+def save_reference_images(uploaded_files, memo, base_dir="references"):
+    folder_path = os.path.join(base_dir, "image_prompts")
+    os.makedirs(folder_path, exist_ok=True)
+
+    saved_files = []
+    now = datetime.now().strftime("%Y%m%d_%H%M%S")
+    for index, uploaded_file in enumerate(uploaded_files, start=1):
+        original_name = clean_filename(os.path.splitext(uploaded_file.name)[0])
+        extension = os.path.splitext(uploaded_file.name)[1].lower()
+        if extension not in REFERENCE_IMAGE_EXTENSIONS:
+            continue
+
+        file_path = os.path.join(folder_path, f"{now}_{index}_{original_name}{extension}")
+        with open(file_path, "wb") as file:
+            file.write(uploaded_file.getbuffer())
+        saved_files.append(file_path)
+
+    if saved_files and memo.strip():
+        memo_path = os.path.join(folder_path, f"{now}_image_reference_note.txt")
+        with open(memo_path, "w", encoding="utf-8") as file:
+            file.write(memo.strip())
+
+    return saved_files
+
+
 def render_reference_learning_agent():
     st.markdown("## 레퍼런스 학습 에이전트")
     st.caption("마음에 드는 예시를 넣어두면 자동화 결과의 문체, 구성, 이미지/영상 프롬프트 스타일에 반영합니다.")
@@ -1305,6 +1405,76 @@ def render_reference_learning_agent():
             st.markdown(rules)
     else:
         st.info("아직 학습된 레퍼런스 규칙이 없습니다. 예시 파일을 넣은 뒤 학습을 실행하세요.")
+
+    with st.expander("레퍼런스 바로 추가", expanded=True):
+        input_tab, url_tab, image_tab = st.tabs(["텍스트", "URL", "이미지"])
+
+        with input_tab:
+            with st.form("reference_text_form", clear_on_submit=True):
+                text_category = st.selectbox(
+                    "저장할 레퍼런스 종류",
+                    list(REFERENCE_INPUT_OPTIONS.keys()),
+                    key="reference_text_category",
+                )
+                text_title = st.text_input(
+                    "제목",
+                    placeholder="예: 고급스러운 병원 톤, 마음에 드는 캡션",
+                    key="reference_text_title",
+                )
+                text_content = st.text_area(
+                    "내용",
+                    placeholder="마음에 드는 문장, 캡션, 대본, 프롬프트를 붙여넣으세요.",
+                    height=180,
+                    key="reference_text_content",
+                )
+                text_submitted = st.form_submit_button("텍스트 레퍼런스 저장")
+
+            if text_submitted:
+                if not text_content.strip():
+                    st.warning("저장할 내용을 입력해주세요.")
+                else:
+                    saved_path = save_reference_text(text_category, text_title, text_content)
+                    st.success(f"저장했습니다: {saved_path}")
+
+        with url_tab:
+            with st.form("reference_url_form", clear_on_submit=True):
+                urls_text = st.text_area(
+                    "참고 URL",
+                    placeholder="https://example.com\nhttps://example.com/post",
+                    height=140,
+                    key="reference_urls_text",
+                )
+                url_submitted = st.form_submit_button("URL 저장")
+
+            if url_submitted:
+                saved_count = append_reference_urls(urls_text)
+                if saved_count:
+                    st.success(f"URL {saved_count}개를 저장했습니다.")
+                else:
+                    st.warning("새로 저장할 URL이 없습니다. http:// 또는 https://로 시작하는 주소를 입력해주세요.")
+
+        with image_tab:
+            uploaded_images = st.file_uploader(
+                "이미지 레퍼런스",
+                type=["png", "jpg", "jpeg", "webp"],
+                accept_multiple_files=True,
+                key="reference_image_uploads",
+            )
+            image_memo = st.text_area(
+                "이미지에서 참고할 점",
+                placeholder="예: 조명은 밝고 깨끗하게, 제품은 중앙에 크게, 배경은 과하지 않게",
+                height=120,
+                key="reference_image_memo",
+            )
+            if st.button("이미지 레퍼런스 저장", key="save_reference_images_button"):
+                if not uploaded_images:
+                    st.warning("저장할 이미지를 먼저 선택해주세요.")
+                else:
+                    saved_images = save_reference_images(uploaded_images, image_memo)
+                    if saved_images:
+                        st.success(f"이미지 {len(saved_images)}개를 저장했습니다.")
+                    else:
+                        st.warning("지원하는 이미지 파일을 선택해주세요.")
 
     with st.expander("레퍼런스 넣는 위치", expanded=False):
         st.markdown(
