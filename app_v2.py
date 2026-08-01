@@ -1076,6 +1076,164 @@ def split_and_save_result(content, project_folder):
         saved_files.append(file_path)
 
     return saved_files
+
+
+IMAGE_EXTENSIONS = (".png", ".jpg", ".jpeg", ".webp")
+SECTION_FILE_NAMES = {
+    "01_콘텐츠_방향.txt",
+    "02_썸네일_후킹.txt",
+    "03_릴스_대본.txt",
+    "04_인스타_캡션.txt",
+    "05_해시태그.txt",
+    "07_영상_프롬프트.txt",
+    "08_장면_구성표.txt",
+    "09_자막_문구.txt",
+    "10_제작_노트.txt",
+}
+
+
+def extract_image_prompt_from_saved_content(content):
+    if "# 6. 이미지 생성 프롬프트" in content:
+        start = content.find("# 6. 이미지 생성 프롬프트")
+        next_section = re.search(r"\n#\s*[7-9]\.", content[start + 1:])
+        end = start + 1 + next_section.start() if next_section else len(content)
+        return content[start:end].strip()
+
+    if content.strip().startswith("# 6. 이미지 생성 프롬프트"):
+        return content.strip()
+
+    return ""
+
+
+def find_related_image_file(text_file_path):
+    folder = os.path.dirname(text_file_path)
+    text_stem = os.path.splitext(os.path.basename(text_file_path))[0]
+
+    image_files = []
+    for file_name in os.listdir(folder):
+        if file_name.lower().endswith(IMAGE_EXTENSIONS):
+            image_files.append(os.path.join(folder, file_name))
+
+    if not image_files:
+        return ""
+
+    matching_images = [
+        image_path
+        for image_path in image_files
+        if os.path.splitext(os.path.basename(image_path))[0].startswith(text_stem)
+    ]
+
+    candidates = matching_images if matching_images else image_files
+    return max(candidates, key=os.path.getmtime)
+
+
+def format_saved_time(path):
+    return datetime.fromtimestamp(os.path.getmtime(path)).strftime("%Y-%m-%d %H:%M")
+
+
+def load_generation_history(limit=12):
+    history = []
+
+    if not os.path.exists("projects"):
+        return history
+
+    for folder_path, _, file_names in os.walk("projects"):
+        for file_name in file_names:
+            if not file_name.endswith(".txt"):
+                continue
+
+            if file_name in SECTION_FILE_NAMES:
+                continue
+
+            file_path = os.path.join(folder_path, file_name)
+
+            try:
+                with open(file_path, "r", encoding="utf-8") as file:
+                    content = file.read()
+            except UnicodeDecodeError:
+                continue
+
+            image_prompt = extract_image_prompt_from_saved_content(content)
+            if not image_prompt:
+                continue
+
+            project_name = os.path.basename(folder_path)
+            topic_name = os.path.splitext(file_name)[0]
+            image_file = find_related_image_file(file_path)
+
+            history.append(
+                {
+                    "project_name": project_name,
+                    "topic_name": topic_name,
+                    "saved_time": format_saved_time(file_path),
+                    "file_path": file_path,
+                    "image_file": image_file,
+                    "image_prompt": image_prompt,
+                    "modified_time": os.path.getmtime(file_path),
+                }
+            )
+
+    return sorted(
+        history,
+        key=lambda item: item["modified_time"],
+        reverse=True,
+    )[:limit]
+
+
+def render_generation_history():
+    with st.expander("생성 기록", expanded=False):
+        history = load_generation_history()
+
+        if not history:
+            st.info("아직 이미지 프롬프트가 포함된 생성 기록이 없습니다.")
+            return
+
+        st.caption("최근 저장된 결과의 이미지 미리보기, 프롬프트, 저장 시간을 확인합니다.")
+
+        for index, item in enumerate(history):
+            with st.container(border=True):
+                header_col, time_col = st.columns([2, 1])
+                header_col.markdown(f"#### {item['project_name']}")
+                time_col.caption("저장 시간")
+                time_col.markdown(f"**{item['saved_time']}**")
+
+                st.caption(item["topic_name"])
+
+                preview_col, prompt_col = st.columns([1, 2])
+
+                with preview_col:
+                    if item["image_file"]:
+                        st.image(item["image_file"], use_container_width=True)
+                    else:
+                        st.markdown(
+                            """
+                            <div style="
+                                min-height: 220px;
+                                border: 1px dashed #475569;
+                                border-radius: 8px;
+                                display: flex;
+                                align-items: center;
+                                justify-content: center;
+                                text-align: center;
+                                color: #cbd5e1;
+                                padding: 16px;
+                                background: #111827;
+                            ">
+                                저장된 이미지 파일은 아직 없습니다.<br>
+                                이미지 파일을 같은 폴더에 넣으면 여기에 표시됩니다.
+                            </div>
+                            """,
+                            unsafe_allow_html=True,
+                        )
+
+                with prompt_col:
+                    st.text_area(
+                        "이미지 프롬프트",
+                        value=item["image_prompt"],
+                        height=220,
+                        key=f"history_image_prompt_{index}",
+                    )
+                    st.caption(f"원본 파일: {item['file_path']}")
 def custom_industry_profile(industry_name):
     return {
         "target": f"{industry_name} 운영자 또는 대표님",
@@ -1427,6 +1585,8 @@ if "agent_pipeline_report" not in st.session_state:
 
 if "video_production_package" not in st.session_state:
     st.session_state.video_production_package = ""
+
+render_generation_history()
 
 if generate or agent_generate:
     if model_mode == "고품질 모드" and not high_quality_confirmed:
