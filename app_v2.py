@@ -1546,14 +1546,14 @@ def save_reference_text(category, title, content, base_dir="references"):
 
 def append_reference_urls(urls_text, base_dir="references"):
     ensure_reference_folders(base_dir)
-    urls = [
-        line.strip()
-        for line in urls_text.splitlines()
-        if line.strip().startswith(("http://", "https://"))
-    ]
+    urls = extract_reference_urls(urls_text)
 
     if not urls:
-        return 0
+        return {
+            "found": 0,
+            "saved": 0,
+            "duplicates": 0,
+        }
 
     urls_path = os.path.join(base_dir, "urls.txt")
     existing_urls = set()
@@ -1566,8 +1566,13 @@ def append_reference_urls(urls_text, base_dir="references"):
             }
 
     new_urls = [url for url in urls if url not in existing_urls]
+    duplicate_count = len(urls) - len(new_urls)
     if not new_urls:
-        return 0
+        return {
+            "found": len(urls),
+            "saved": 0,
+            "duplicates": duplicate_count,
+        }
 
     with open(urls_path, "a", encoding="utf-8") as file:
         if existing_urls:
@@ -1575,7 +1580,28 @@ def append_reference_urls(urls_text, base_dir="references"):
         file.write("\n".join(new_urls))
         file.write("\n")
 
-    return len(new_urls)
+    return {
+        "found": len(urls),
+        "saved": len(new_urls),
+        "duplicates": duplicate_count,
+    }
+
+
+def extract_reference_urls(text):
+    candidates = re.findall(r"(?:https?://|www\.)[^\s<>()\"']+", text or "")
+    urls = []
+    seen = set()
+
+    for candidate in candidates:
+        url = candidate.rstrip(".,;:!?)]}，。")
+        if url.startswith("www."):
+            url = f"https://{url}"
+
+        if url not in seen:
+            urls.append(url)
+            seen.add(url)
+
+    return urls
 
 
 def save_reference_images(uploaded_files, memo, base_dir="references"):
@@ -1652,20 +1678,26 @@ def render_reference_learning_agent():
 
         with url_tab:
             with st.form("reference_url_form", clear_on_submit=True):
+                st.caption("URL을 한 줄에 하나씩 붙여넣거나, 설명과 함께 붙여넣어도 자동으로 찾아 저장합니다.")
                 urls_text = st.text_area(
                     "참고 URL",
-                    placeholder="https://example.com\nhttps://www.youtube.com/shorts/영상ID",
+                    placeholder="여기에 URL을 붙여넣으세요.",
                     height=140,
                     key="reference_urls_text",
                 )
+                st.caption("예: https://example.com 또는 https://www.youtube.com/shorts/영상ID")
                 url_submitted = st.form_submit_button("URL 저장")
 
             if url_submitted:
-                saved_count = append_reference_urls(urls_text)
-                if saved_count:
-                    st.success(f"URL {saved_count}개를 저장했습니다.")
+                save_result = append_reference_urls(urls_text)
+                if save_result["saved"]:
+                    st.success(f"URL {save_result['saved']}개를 저장했습니다.")
+                    if save_result["duplicates"]:
+                        st.info(f"이미 저장된 URL {save_result['duplicates']}개는 건너뛰었습니다.")
+                elif save_result["found"]:
+                    st.info("입력한 URL은 이미 저장되어 있습니다.")
                 else:
-                    st.warning("새로 저장할 URL이 없습니다. http:// 또는 https://로 시작하는 주소를 입력해주세요.")
+                    st.warning("입력된 URL을 찾지 못했습니다. 입력칸에 실제 주소를 붙여넣어 주세요.")
 
         with image_tab:
             uploaded_images = st.file_uploader(
