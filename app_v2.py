@@ -2,6 +2,8 @@
 import csv
 import re
 import random
+import subprocess
+import sys
 from datetime import datetime
 
 import streamlit as st
@@ -86,6 +88,22 @@ st.markdown(
         font-weight: 700;
         padding: 12px;
         border: 1px solid #374151;
+    }
+
+    [data-testid="stMetric"] {
+        padding: 4px 0 8px;
+    }
+
+    [data-testid="stMetricLabel"] p {
+        font-size: 14px !important;
+        line-height: 1.35 !important;
+        color: #d1d5db !important;
+    }
+
+    [data-testid="stMetricValue"] {
+        font-size: 28px !important;
+        line-height: 1.15 !important;
+        font-weight: 700 !important;
     }
 
     .block-container {
@@ -958,6 +976,7 @@ def section_download_button(label, content, filename_prefix, key):
 
 WORKFLOW_INPUT_FIELDS = [
     "enabled",
+    "status",
     "content_goal",
     "topic_text",
     "brand_display",
@@ -973,6 +992,12 @@ WORKFLOW_INPUT_FIELDS = [
     "video_length",
     "platform",
 ]
+WORKFLOW_STATUS_OPTIONS = ["대기", "완료", "오류"]
+
+
+def normalize_workflow_status(value):
+    status = (value or "").strip()
+    return status if status in WORKFLOW_STATUS_OPTIONS else "대기"
 
 
 def read_workflow_input_rows(path="workflow_inputs.csv"):
@@ -980,12 +1005,17 @@ def read_workflow_input_rows(path="workflow_inputs.csv"):
         return []
 
     with open(path, "r", encoding="utf-8-sig", newline="") as file:
-        return list(csv.DictReader(file))
+        rows = list(csv.DictReader(file))
+
+    for row in rows:
+        row["status"] = normalize_workflow_status(row.get("status"))
+
+    return rows
 
 
 def write_workflow_input_rows(rows, path="workflow_inputs.csv"):
     with open(path, "w", encoding="utf-8-sig", newline="") as file:
-        writer = csv.DictWriter(file, fieldnames=WORKFLOW_INPUT_FIELDS)
+        writer = csv.DictWriter(file, fieldnames=WORKFLOW_INPUT_FIELDS, extrasaction="ignore")
         writer.writeheader()
         writer.writerows(rows)
 
@@ -994,6 +1024,103 @@ def append_workflow_input(row, path="workflow_inputs.csv"):
     rows = read_workflow_input_rows(path)
     rows.append(row)
     write_workflow_input_rows(rows, path)
+
+
+def update_workflow_input_row(row_index, updates, path="workflow_inputs.csv"):
+    rows = read_workflow_input_rows(path)
+    if row_index < 0 or row_index >= len(rows):
+        return False
+
+    rows[row_index].update(updates)
+    write_workflow_input_rows(rows, path)
+    return True
+
+
+def delete_workflow_input_row(row_index, path="workflow_inputs.csv"):
+    rows = read_workflow_input_rows(path)
+    if row_index < 0 or row_index >= len(rows):
+        return False
+
+    rows.pop(row_index)
+    write_workflow_input_rows(rows, path)
+    return True
+
+
+def bulk_update_workflow_rows(predicate, updates, path="workflow_inputs.csv"):
+    rows = read_workflow_input_rows(path)
+    updated_count = 0
+
+    for row in rows:
+        if predicate(row):
+            row.update(updates)
+            updated_count += 1
+
+    if updated_count:
+        write_workflow_input_rows(rows, path)
+
+    return updated_count
+
+
+def count_workflow_rows_by_status(rows):
+    counts = {status: 0 for status in WORKFLOW_STATUS_OPTIONS}
+    for row in rows:
+        counts[normalize_workflow_status(row.get("status"))] += 1
+    return counts
+
+
+def build_workflow_command(
+    model_name,
+    limit,
+    analyze_references=False,
+    dry_run=False,
+    input_path="workflow_inputs.csv",
+    output_path="workflow_outputs",
+):
+    command = ["python", "run_workflow.py"]
+
+    if input_path != "workflow_inputs.csv":
+        command.extend(["--input", input_path])
+    if output_path != "workflow_outputs":
+        command.extend(["--output", output_path])
+    if model_name != "gpt-5-mini":
+        command.extend(["--model", model_name])
+    if limit:
+        command.extend(["--limit", str(limit)])
+    if dry_run:
+        command.append("--dry-run")
+    if analyze_references:
+        command.append("--analyze-references")
+
+    return " ".join(command)
+
+
+def run_workflow_dry_run(limit=None, analyze_references=False):
+    command = [
+        sys.executable,
+        "run_workflow.py",
+        "--dry-run",
+    ]
+    if limit:
+        command.extend(["--limit", str(limit)])
+    if analyze_references:
+        command.append("--analyze-references")
+
+    completed = subprocess.run(
+        command,
+        cwd=os.getcwd(),
+        capture_output=True,
+        text=True,
+        encoding="utf-8",
+        errors="replace",
+        timeout=30,
+    )
+
+    output = "\n".join(
+        part
+        for part in [completed.stdout.strip(), completed.stderr.strip()]
+        if part
+    )
+    return completed.returncode, output
 
 
 def save_result(content, industry_name, region, topic_text):
@@ -1237,6 +1364,94 @@ def render_generation_history():
                     st.caption(f"원본 파일: {item['file_path']}")
 
 
+def read_text_file(path):
+    with open(path, "r", encoding="utf-8", errors="ignore") as file:
+        return file.read()
+
+
+def load_workflow_output_history(base_dir="workflow_outputs", limit=10):
+    if not os.path.exists(base_dir):
+        return []
+
+    history = []
+    for folder_name in os.listdir(base_dir):
+        folder_path = os.path.join(base_dir, folder_name)
+        if not os.path.isdir(folder_path):
+            continue
+
+        result_path = os.path.join(folder_path, "final_result.txt")
+        if not os.path.exists(result_path):
+            continue
+
+        summary_path = os.path.join(folder_path, "summary.txt")
+        report_path = os.path.join(folder_path, "agent_report.txt")
+        modified_time = os.path.getmtime(result_path)
+
+        history.append(
+            {
+                "folder_name": folder_name,
+                "folder_path": folder_path,
+                "result_path": result_path,
+                "summary_path": summary_path if os.path.exists(summary_path) else "",
+                "report_path": report_path if os.path.exists(report_path) else "",
+                "saved_time": datetime.fromtimestamp(modified_time).strftime("%Y-%m-%d %H:%M"),
+                "modified_time": modified_time,
+            }
+        )
+
+    return sorted(history, key=lambda item: item["modified_time"], reverse=True)[:limit]
+
+
+def render_workflow_output_history():
+    with st.expander("최근 자동화 결과", expanded=False):
+        history = load_workflow_output_history()
+
+        if not history:
+            st.info("아직 저장된 자동화 결과가 없습니다.")
+            return
+
+        result_options = {
+            f"{item['saved_time']} / {item['folder_name']}": index
+            for index, item in enumerate(history)
+        }
+        selected_label = st.selectbox(
+            "확인할 결과",
+            list(result_options.keys()),
+            key="workflow_output_history_selected",
+        )
+        selected_item = history[result_options[selected_label]]
+
+        st.caption(f"결과 폴더: {selected_item['folder_path']}")
+
+        result_content = read_text_file(selected_item["result_path"])
+        if selected_item["summary_path"]:
+            with st.expander("요약", expanded=True):
+                st.text(read_text_file(selected_item["summary_path"]))
+
+        st.text_area(
+            "최종 결과",
+            value=result_content,
+            height=360,
+            key="workflow_output_history_result",
+        )
+        st.download_button(
+            "최종 결과 다운로드",
+            result_content,
+            file_name=f"{clean_filename(selected_item['folder_name'])}_final_result.txt",
+            mime="text/plain",
+            key="workflow_output_history_download",
+        )
+
+        if selected_item["report_path"]:
+            with st.expander("에이전트 리포트", expanded=False):
+                st.text_area(
+                    "리포트",
+                    value=read_text_file(selected_item["report_path"]),
+                    height=260,
+                    key="workflow_output_history_report",
+                )
+
+
 REFERENCE_FOLDERS = {
     "brand_guides": "브랜드 톤/금지 표현",
     "captions": "인스타 캡션 예시",
@@ -1244,6 +1459,14 @@ REFERENCE_FOLDERS = {
     "image_prompts": "이미지 프롬프트 예시",
     "video_prompts": "영상 프롬프트 예시",
 }
+REFERENCE_INPUT_OPTIONS = {
+    "브랜드 톤/금지 표현": "brand_guides",
+    "인스타 캡션 예시": "captions",
+    "릴스 대본 예시": "scripts",
+    "이미지 프롬프트 예시": "image_prompts",
+    "영상 프롬프트 예시": "video_prompts",
+}
+REFERENCE_IMAGE_EXTENSIONS = (".png", ".jpg", ".jpeg", ".webp")
 
 
 def count_reference_files(base_dir="references"):
@@ -1257,6 +1480,8 @@ def count_reference_files(base_dir="references"):
         if os.path.exists(folder_path):
             for file_name in os.listdir(folder_path):
                 if file_name.lower().endswith((".txt", ".md", ".csv")):
+                    file_count += 1
+                elif folder == "image_prompts" and file_name.lower().endswith(REFERENCE_IMAGE_EXTENSIONS):
                     file_count += 1
 
         counts[label] = file_count
@@ -1277,6 +1502,80 @@ def count_reference_files(base_dir="references"):
     return counts
 
 
+def save_reference_text(category, title, content, base_dir="references"):
+    folder = REFERENCE_INPUT_OPTIONS[category]
+    folder_path = os.path.join(base_dir, folder)
+    os.makedirs(folder_path, exist_ok=True)
+
+    now = datetime.now().strftime("%Y%m%d_%H%M%S")
+    file_title = clean_filename(title or category)
+    file_path = os.path.join(folder_path, f"{now}_{file_title}.txt")
+
+    with open(file_path, "w", encoding="utf-8") as file:
+        file.write(content.strip())
+
+    return file_path
+
+
+def append_reference_urls(urls_text, base_dir="references"):
+    ensure_reference_folders(base_dir)
+    urls = [
+        line.strip()
+        for line in urls_text.splitlines()
+        if line.strip().startswith(("http://", "https://"))
+    ]
+
+    if not urls:
+        return 0
+
+    urls_path = os.path.join(base_dir, "urls.txt")
+    existing_urls = set()
+    if os.path.exists(urls_path):
+        with open(urls_path, "r", encoding="utf-8", errors="ignore") as file:
+            existing_urls = {
+                line.strip()
+                for line in file.read().splitlines()
+                if line.strip().startswith(("http://", "https://"))
+            }
+
+    new_urls = [url for url in urls if url not in existing_urls]
+    if not new_urls:
+        return 0
+
+    with open(urls_path, "a", encoding="utf-8") as file:
+        if existing_urls:
+            file.write("\n")
+        file.write("\n".join(new_urls))
+        file.write("\n")
+
+    return len(new_urls)
+
+
+def save_reference_images(uploaded_files, memo, base_dir="references"):
+    folder_path = os.path.join(base_dir, "image_prompts")
+    os.makedirs(folder_path, exist_ok=True)
+
+    saved_files = []
+    now = datetime.now().strftime("%Y%m%d_%H%M%S")
+    for index, uploaded_file in enumerate(uploaded_files, start=1):
+        original_name = clean_filename(os.path.splitext(uploaded_file.name)[0])
+        extension = os.path.splitext(uploaded_file.name)[1].lower()
+        if extension not in REFERENCE_IMAGE_EXTENSIONS:
+            continue
+
+        file_path = os.path.join(folder_path, f"{now}_{index}_{original_name}{extension}")
+        with open(file_path, "wb") as file:
+            file.write(uploaded_file.getbuffer())
+        saved_files.append(file_path)
+
+    if saved_files and memo.strip():
+        memo_path = os.path.join(folder_path, f"{now}_image_reference_note.txt")
+        with open(memo_path, "w", encoding="utf-8") as file:
+            file.write(memo.strip())
+
+    return saved_files
+
+
 def render_reference_learning_agent():
     st.markdown("## 레퍼런스 학습 에이전트")
     st.caption("마음에 드는 예시를 넣어두면 자동화 결과의 문체, 구성, 이미지/영상 프롬프트 스타일에 반영합니다.")
@@ -1294,17 +1593,75 @@ def render_reference_learning_agent():
     else:
         st.info("아직 학습된 레퍼런스 규칙이 없습니다. 예시 파일을 넣은 뒤 학습을 실행하세요.")
 
-    with st.expander("레퍼런스 넣는 위치", expanded=False):
-        st.markdown(
-            """
-- `references/brand_guides`: 브랜드 톤, 금지 표현, 고객 정보
-- `references/captions`: 마음에 드는 인스타 캡션
-- `references/scripts`: 릴스 대본 예시
-- `references/image_prompts`: 이미지 프롬프트 예시
-- `references/video_prompts`: 영상 프롬프트 예시
-- `references/urls.txt`: 참고 URL을 한 줄에 하나씩 입력
-"""
-        )
+    with st.expander("레퍼런스 바로 추가", expanded=True):
+        input_tab, url_tab, image_tab = st.tabs(["텍스트", "URL", "이미지"])
+
+        with input_tab:
+            with st.form("reference_text_form", clear_on_submit=True):
+                text_category = st.selectbox(
+                    "저장할 레퍼런스 종류",
+                    list(REFERENCE_INPUT_OPTIONS.keys()),
+                    key="reference_text_category",
+                )
+                text_title = st.text_input(
+                    "제목",
+                    placeholder="예: 고급스러운 병원 톤, 마음에 드는 캡션",
+                    key="reference_text_title",
+                )
+                text_content = st.text_area(
+                    "내용",
+                    placeholder="마음에 드는 문장, 캡션, 대본, 프롬프트를 붙여넣으세요.",
+                    height=180,
+                    key="reference_text_content",
+                )
+                text_submitted = st.form_submit_button("텍스트 레퍼런스 저장")
+
+            if text_submitted:
+                if not text_content.strip():
+                    st.warning("저장할 내용을 입력해주세요.")
+                else:
+                    saved_path = save_reference_text(text_category, text_title, text_content)
+                    st.success(f"저장했습니다: {saved_path}")
+
+        with url_tab:
+            with st.form("reference_url_form", clear_on_submit=True):
+                urls_text = st.text_area(
+                    "참고 URL",
+                    placeholder="https://example.com\nhttps://example.com/post",
+                    height=140,
+                    key="reference_urls_text",
+                )
+                url_submitted = st.form_submit_button("URL 저장")
+
+            if url_submitted:
+                saved_count = append_reference_urls(urls_text)
+                if saved_count:
+                    st.success(f"URL {saved_count}개를 저장했습니다.")
+                else:
+                    st.warning("새로 저장할 URL이 없습니다. http:// 또는 https://로 시작하는 주소를 입력해주세요.")
+
+        with image_tab:
+            uploaded_images = st.file_uploader(
+                "이미지 레퍼런스",
+                type=["png", "jpg", "jpeg", "webp"],
+                accept_multiple_files=True,
+                key="reference_image_uploads",
+            )
+            image_memo = st.text_area(
+                "이미지에서 참고할 점",
+                placeholder="예: 조명은 밝고 깨끗하게, 제품은 중앙에 크게, 배경은 과하지 않게",
+                height=120,
+                key="reference_image_memo",
+            )
+            if st.button("이미지 레퍼런스 저장", key="save_reference_images_button"):
+                if not uploaded_images:
+                    st.warning("저장할 이미지를 먼저 선택해주세요.")
+                else:
+                    saved_images = save_reference_images(uploaded_images, image_memo)
+                    if saved_images:
+                        st.success(f"이미지 {len(saved_images)}개를 저장했습니다.")
+                    else:
+                        st.warning("지원하는 이미지 파일을 선택해주세요.")
 
     ref_model_label = st.selectbox(
         "레퍼런스 학습 모델",
@@ -1450,6 +1807,7 @@ with st.expander("자동화 작업 추가", expanded=True):
             append_workflow_input(
                 {
                     "enabled": "yes" if workflow_enabled else "no",
+                    "status": "대기",
                     "content_goal": workflow_goal,
                     "topic_text": workflow_topic_text,
                     "brand_display": workflow_brand.strip() or "미입력",
@@ -1474,22 +1832,185 @@ with st.expander("자동화 작업 추가", expanded=True):
     workflow_rows = read_workflow_input_rows()
     if workflow_rows:
         st.markdown("#### 저장된 자동화 작업")
+        status_counts = count_workflow_rows_by_status(workflow_rows)
+        enabled_count = len(
+            [
+                row
+                for row in workflow_rows
+                if (row.get("enabled") or "yes").strip().lower() not in {"no", "n", "false", "0", "아니오"}
+            ]
+        )
+        summary_col1, summary_col2, summary_col3, summary_col4 = st.columns(4)
+        summary_col1.metric("전체", f"{len(workflow_rows)}개")
+        summary_col2.metric("대기", f"{status_counts['대기']}개")
+        summary_col3.metric("완료", f"{status_counts['완료']}개")
+        summary_col4.metric("오류", f"{status_counts['오류']}개")
+
+        filter_col1, filter_col2 = st.columns(2)
+        with filter_col1:
+            workflow_status_filter = st.selectbox(
+                "상태 필터",
+                ["전체"] + WORKFLOW_STATUS_OPTIONS,
+                key="workflow_status_filter",
+            )
+        with filter_col2:
+            workflow_enabled_filter = st.selectbox(
+                "실행 필터",
+                ["전체", "실행 포함", "실행 제외"],
+                key="workflow_enabled_filter",
+            )
+
+        filtered_workflow_rows = []
+        for index, row in enumerate(workflow_rows):
+            status = normalize_workflow_status(row.get("status"))
+            enabled = (row.get("enabled") or "yes").strip().lower()
+            is_enabled = enabled not in {"no", "n", "false", "0", "아니오"}
+
+            if workflow_status_filter != "전체" and status != workflow_status_filter:
+                continue
+            if workflow_enabled_filter == "실행 포함" and not is_enabled:
+                continue
+            if workflow_enabled_filter == "실행 제외" and is_enabled:
+                continue
+
+            filtered_workflow_rows.append((index, row))
+
+        st.caption(f"실행 대상 {enabled_count}개 / 현재 표시 {len(filtered_workflow_rows)}개")
         preview_rows = [
             {
                 "실행": row.get("enabled", ""),
+                "상태": normalize_workflow_status(row.get("status")),
                 "목적": row.get("content_goal", ""),
                 "주제": row.get("topic_text", ""),
                 "업종": row.get("industry_name", ""),
                 "지역": row.get("region_display", ""),
                 "플랫폼": row.get("platform", ""),
             }
-            for row in workflow_rows
+            for _, row in filtered_workflow_rows
         ]
-        st.dataframe(preview_rows, width="stretch", hide_index=True)
-        st.code("python .\\run_workflow.py --analyze-references", language="powershell")
+        if preview_rows:
+            st.dataframe(preview_rows, width="stretch", hide_index=True)
+        else:
+            st.info("필터 조건에 맞는 작업이 없습니다.")
+
+        action_col1, action_col2 = st.columns(2)
+        with action_col1:
+            if st.button("완료 작업을 대기로 변경", key="workflow_reset_completed_button"):
+                updated_count = bulk_update_workflow_rows(
+                    lambda row: normalize_workflow_status(row.get("status")) == "완료",
+                    {"status": "대기"},
+                )
+                st.success(f"{updated_count}개 작업을 대기로 변경했습니다.")
+                st.rerun()
+        with action_col2:
+            if st.button("오류 작업을 대기로 변경", key="workflow_reset_failed_button"):
+                updated_count = bulk_update_workflow_rows(
+                    lambda row: normalize_workflow_status(row.get("status")) == "오류",
+                    {"status": "대기"},
+                )
+                st.success(f"{updated_count}개 작업을 대기로 변경했습니다.")
+                st.rerun()
+
+        with st.expander("선택 작업 관리", expanded=False):
+            task_options = {
+                f"{index + 1}. {row.get('topic_text', '제목 없음')} / {row.get('industry_name', '업종 없음')}": index
+                for index, row in filtered_workflow_rows
+            }
+            if task_options:
+                selected_task_label = st.selectbox(
+                    "관리할 작업",
+                    list(task_options.keys()),
+                    key="workflow_manage_selected_task",
+                )
+                selected_task_index = task_options[selected_task_label]
+                selected_task = workflow_rows[selected_task_index]
+
+                manage_col1, manage_col2, manage_col3 = st.columns(3)
+                with manage_col1:
+                    if st.button("대기로 변경", key="workflow_reset_status_button"):
+                        update_workflow_input_row(selected_task_index, {"status": "대기"})
+                        st.success("작업 상태를 대기로 변경했습니다.")
+                        st.rerun()
+
+                with manage_col2:
+                    next_enabled = "no" if selected_task.get("enabled", "yes") == "yes" else "yes"
+                    enabled_label = "실행 제외" if next_enabled == "no" else "실행 포함"
+                    if st.button(enabled_label, key="workflow_toggle_enabled_button"):
+                        update_workflow_input_row(selected_task_index, {"enabled": next_enabled})
+                        st.success(f"작업을 {enabled_label} 상태로 변경했습니다.")
+                        st.rerun()
+
+                with manage_col3:
+                    delete_confirmed = st.checkbox(
+                        "삭제 확인",
+                        key="workflow_delete_confirmed",
+                    )
+                    if st.button("삭제", key="workflow_delete_button", disabled=not delete_confirmed):
+                        delete_workflow_input_row(selected_task_index)
+                        st.success("작업을 삭제했습니다.")
+                        st.rerun()
+            else:
+                st.info("관리할 작업이 없습니다.")
+
+        with st.expander("자동화 실행 준비", expanded=True):
+            runner_col1, runner_col2 = st.columns(2)
+            with runner_col1:
+                runner_model = st.selectbox(
+                    "실행 모델",
+                    ["gpt-5-mini", "gpt-5"],
+                    key="workflow_runner_model",
+                )
+                runner_limit = st.number_input(
+                    "실행 개수 제한",
+                    min_value=0,
+                    max_value=max(len(workflow_rows), 100),
+                    value=0,
+                    step=1,
+                    key="workflow_runner_limit",
+                )
+            with runner_col2:
+                runner_analyze_references = st.checkbox(
+                    "실행 전 레퍼런스 학습",
+                    value=True,
+                    key="workflow_runner_analyze_references",
+                )
+                runner_dry_run = st.checkbox(
+                    "API 호출 없이 입력 점검",
+                    value=False,
+                    key="workflow_runner_dry_run",
+                )
+
+            effective_limit = int(runner_limit) if runner_limit else None
+            runner_command = build_workflow_command(
+                model_name=runner_model,
+                limit=effective_limit,
+                analyze_references=runner_analyze_references,
+                dry_run=runner_dry_run,
+            )
+            st.code(runner_command, language="powershell")
+
+            if st.button("입력 점검 실행", key="workflow_runner_dry_run_button"):
+                with st.spinner("자동화 입력을 점검하고 있습니다..."):
+                    returncode, dry_run_output = run_workflow_dry_run(
+                        limit=effective_limit,
+                        analyze_references=runner_analyze_references,
+                    )
+
+                if returncode == 0:
+                    st.success("입력 점검이 완료되었습니다.")
+                else:
+                    st.error("입력 점검 중 오류가 발생했습니다.")
+                st.text_area(
+                    "입력 점검 결과",
+                    value=dry_run_output,
+                    height=220,
+                    key="workflow_runner_dry_run_output",
+                )
     else:
         st.info("아직 저장된 자동화 작업이 없습니다.")
 
+
+render_workflow_output_history()
 
 st.markdown("## 수동 생성 도구")
 st.caption("테스트나 급한 1건 제작이 필요할 때 사용하는 보조 영역입니다.")
