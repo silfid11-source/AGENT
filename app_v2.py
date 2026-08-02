@@ -1654,7 +1654,7 @@ def render_reference_learning_agent():
             with st.form("reference_url_form", clear_on_submit=True):
                 urls_text = st.text_area(
                     "참고 URL",
-                    placeholder="https://example.com\nhttps://example.com/post",
+                    placeholder="https://example.com\nhttps://www.youtube.com/shorts/영상ID",
                     height=140,
                     key="reference_urls_text",
                 )
