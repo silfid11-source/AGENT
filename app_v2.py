@@ -2,6 +2,8 @@
 import csv
 import re
 import random
+import subprocess
+import sys
 from datetime import datetime
 
 import streamlit as st
@@ -1066,6 +1068,61 @@ def count_workflow_rows_by_status(rows):
     return counts
 
 
+def build_workflow_command(
+    model_name,
+    limit,
+    analyze_references=False,
+    dry_run=False,
+    input_path="workflow_inputs.csv",
+    output_path="workflow_outputs",
+):
+    command = ["python", "run_workflow.py"]
+
+    if input_path != "workflow_inputs.csv":
+        command.extend(["--input", input_path])
+    if output_path != "workflow_outputs":
+        command.extend(["--output", output_path])
+    if model_name != "gpt-5-mini":
+        command.extend(["--model", model_name])
+    if limit:
+        command.extend(["--limit", str(limit)])
+    if dry_run:
+        command.append("--dry-run")
+    if analyze_references:
+        command.append("--analyze-references")
+
+    return " ".join(command)
+
+
+def run_workflow_dry_run(limit=None, analyze_references=False):
+    command = [
+        sys.executable,
+        "run_workflow.py",
+        "--dry-run",
+    ]
+    if limit:
+        command.extend(["--limit", str(limit)])
+    if analyze_references:
+        command.append("--analyze-references")
+
+    completed = subprocess.run(
+        command,
+        cwd=os.getcwd(),
+        capture_output=True,
+        text=True,
+        encoding="utf-8",
+        errors="replace",
+        timeout=30,
+    )
+
+    output = "\n".join(
+        part
+        for part in [completed.stdout.strip(), completed.stderr.strip()]
+        if part
+    )
+    return completed.returncode, output
+
+
 def save_result(content, industry_name, region, topic_text):
 
     project_name = f"{industry_name}_{region}"
@@ -1895,7 +1952,60 @@ with st.expander("자동화 작업 추가", expanded=True):
             else:
                 st.info("관리할 작업이 없습니다.")
 
-        st.code("python .\\run_workflow.py --analyze-references", language="powershell")
+        with st.expander("자동화 실행 준비", expanded=True):
+            runner_col1, runner_col2 = st.columns(2)
+            with runner_col1:
+                runner_model = st.selectbox(
+                    "실행 모델",
+                    ["gpt-5-mini", "gpt-5"],
+                    key="workflow_runner_model",
+                )
+                runner_limit = st.number_input(
+                    "실행 개수 제한",
+                    min_value=0,
+                    max_value=max(len(workflow_rows), 100),
+                    value=0,
+                    step=1,
+                    key="workflow_runner_limit",
+                )
+            with runner_col2:
+                runner_analyze_references = st.checkbox(
+                    "실행 전 레퍼런스 학습",
+                    value=True,
+                    key="workflow_runner_analyze_references",
+                )
+                runner_dry_run = st.checkbox(
+                    "API 호출 없이 입력 점검",
+                    value=False,
+                    key="workflow_runner_dry_run",
+                )
+
+            effective_limit = int(runner_limit) if runner_limit else None
+            runner_command = build_workflow_command(
+                model_name=runner_model,
+                limit=effective_limit,
+                analyze_references=runner_analyze_references,
+                dry_run=runner_dry_run,
+            )
+            st.code(runner_command, language="powershell")
+
+            if st.button("입력 점검 실행", key="workflow_runner_dry_run_button"):
+                with st.spinner("자동화 입력을 점검하고 있습니다..."):
+                    returncode, dry_run_output = run_workflow_dry_run(
+                        limit=effective_limit,
+                        analyze_references=runner_analyze_references,
+                    )
+
+                if returncode == 0:
+                    st.success("입력 점검이 완료되었습니다.")
+                else:
+                    st.error("입력 점검 중 오류가 발생했습니다.")
+                st.text_area(
+                    "입력 점검 결과",
+                    value=dry_run_output,
+                    height=220,
+                    key="workflow_runner_dry_run_output",
+                )
     else:
         st.info("아직 저장된 자동화 작업이 없습니다.")
 
