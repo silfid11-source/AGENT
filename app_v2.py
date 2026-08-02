@@ -1094,26 +1094,47 @@ def build_workflow_command(
     return " ".join(command)
 
 
-def run_workflow_dry_run(limit=None, analyze_references=False):
+def run_workflow_cli(
+    model_name="gpt-5-mini",
+    limit=None,
+    analyze_references=False,
+    dry_run=False,
+    timeout_seconds=30,
+):
     command = [
         sys.executable,
         "run_workflow.py",
-        "--dry-run",
     ]
+    if model_name != "gpt-5-mini":
+        command.extend(["--model", model_name])
     if limit:
         command.extend(["--limit", str(limit)])
+    if dry_run:
+        command.append("--dry-run")
     if analyze_references:
         command.append("--analyze-references")
 
-    completed = subprocess.run(
-        command,
-        cwd=os.getcwd(),
-        capture_output=True,
-        text=True,
-        encoding="utf-8",
-        errors="replace",
-        timeout=30,
-    )
+    try:
+        completed = subprocess.run(
+            command,
+            cwd=os.getcwd(),
+            capture_output=True,
+            text=True,
+            encoding="utf-8",
+            errors="replace",
+            timeout=timeout_seconds,
+        )
+    except subprocess.TimeoutExpired as error:
+        output = "\n".join(
+            part
+            for part in [
+                (error.stdout or "").strip(),
+                (error.stderr or "").strip(),
+                f"실행 시간이 {timeout_seconds}초를 초과했습니다.",
+            ]
+            if part
+        )
+        return 124, output
 
     output = "\n".join(
         part
@@ -1991,9 +2012,12 @@ with st.expander("자동화 작업 추가", expanded=True):
 
             if st.button("입력 점검 실행", key="workflow_runner_dry_run_button"):
                 with st.spinner("자동화 입력을 점검하고 있습니다..."):
-                    returncode, dry_run_output = run_workflow_dry_run(
+                    returncode, dry_run_output = run_workflow_cli(
+                        model_name=runner_model,
                         limit=effective_limit,
                         analyze_references=runner_analyze_references,
+                        dry_run=True,
+                        timeout_seconds=30,
                     )
 
                 if returncode == 0:
@@ -2005,6 +2029,38 @@ with st.expander("자동화 작업 추가", expanded=True):
                     value=dry_run_output,
                     height=220,
                     key="workflow_runner_dry_run_output",
+                )
+
+            real_run_confirmed = st.checkbox(
+                "실제 API를 호출해 자동화를 실행합니다",
+                key="workflow_runner_real_run_confirmed",
+            )
+            if effective_limit is None:
+                st.warning("실제 실행 전에 실행 개수 제한을 설정하면 더 안전하게 테스트할 수 있습니다.")
+
+            if st.button(
+                "자동화 실행",
+                key="workflow_runner_real_run_button",
+                disabled=not real_run_confirmed,
+            ):
+                with st.spinner("자동화를 실행하고 있습니다. 작업 수에 따라 시간이 걸릴 수 있습니다..."):
+                    returncode, run_output = run_workflow_cli(
+                        model_name=runner_model,
+                        limit=effective_limit,
+                        analyze_references=runner_analyze_references,
+                        dry_run=False,
+                        timeout_seconds=900,
+                    )
+
+                if returncode == 0:
+                    st.success("자동화 실행이 완료되었습니다.")
+                else:
+                    st.error("자동화 실행 중 오류가 발생했습니다.")
+                st.text_area(
+                    "자동화 실행 결과",
+                    value=run_output,
+                    height=300,
+                    key="workflow_runner_real_run_output",
                 )
     else:
         st.info("아직 저장된 자동화 작업이 없습니다.")
