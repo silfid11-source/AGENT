@@ -1071,6 +1071,7 @@ def count_workflow_rows_by_status(rows):
 def build_workflow_command(
     model_name,
     limit,
+    status,
     analyze_references=False,
     dry_run=False,
     input_path="workflow_inputs.csv",
@@ -1086,6 +1087,8 @@ def build_workflow_command(
         command.extend(["--model", model_name])
     if limit:
         command.extend(["--limit", str(limit)])
+    if status != "대기":
+        command.extend(["--status", status])
     if dry_run:
         command.append("--dry-run")
     if analyze_references:
@@ -1097,6 +1100,7 @@ def build_workflow_command(
 def run_workflow_cli(
     model_name="gpt-5-mini",
     limit=None,
+    status="대기",
     analyze_references=False,
     dry_run=False,
     timeout_seconds=30,
@@ -1109,6 +1113,8 @@ def run_workflow_cli(
         command.extend(["--model", model_name])
     if limit:
         command.extend(["--limit", str(limit)])
+    if status != "대기":
+        command.extend(["--status", status])
     if dry_run:
         command.append("--dry-run")
     if analyze_references:
@@ -1981,6 +1987,11 @@ with st.expander("자동화 작업 추가", expanded=True):
                     ["gpt-5-mini", "gpt-5"],
                     key="workflow_runner_model",
                 )
+                runner_status = st.selectbox(
+                    "실행할 상태",
+                    ["대기", "오류", "완료", "전체"],
+                    key="workflow_runner_status",
+                )
                 runner_limit = st.number_input(
                     "실행 개수 제한",
                     min_value=0,
@@ -2005,6 +2016,7 @@ with st.expander("자동화 작업 추가", expanded=True):
             runner_command = build_workflow_command(
                 model_name=runner_model,
                 limit=effective_limit,
+                status=runner_status,
                 analyze_references=runner_analyze_references,
                 dry_run=runner_dry_run,
             )
@@ -2015,6 +2027,7 @@ with st.expander("자동화 작업 추가", expanded=True):
                     returncode, dry_run_output = run_workflow_cli(
                         model_name=runner_model,
                         limit=effective_limit,
+                        status=runner_status,
                         analyze_references=runner_analyze_references,
                         dry_run=True,
                         timeout_seconds=30,
@@ -2037,6 +2050,8 @@ with st.expander("자동화 작업 추가", expanded=True):
             )
             if effective_limit is None:
                 st.warning("실제 실행 전에 실행 개수 제한을 설정하면 더 안전하게 테스트할 수 있습니다.")
+            if runner_status in {"완료", "전체"}:
+                st.warning("완료 작업을 포함하면 이미 만든 콘텐츠가 다시 생성될 수 있습니다.")
 
             if st.button(
                 "자동화 실행",
@@ -2047,6 +2062,7 @@ with st.expander("자동화 작업 추가", expanded=True):
                     returncode, run_output = run_workflow_cli(
                         model_name=runner_model,
                         limit=effective_limit,
+                        status=runner_status,
                         analyze_references=runner_analyze_references,
                         dry_run=False,
                         timeout_seconds=900,

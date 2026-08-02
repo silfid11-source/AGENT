@@ -24,6 +24,12 @@ def main():
     parser.add_argument("--output", default="workflow_outputs", help="결과 저장 폴더")
     parser.add_argument("--model", default="gpt-5-mini", help="사용할 OpenAI 모델")
     parser.add_argument("--limit", type=int, default=None, help="앞에서부터 실행할 작업 수")
+    parser.add_argument(
+        "--status",
+        choices=["대기", "완료", "오류", "전체"],
+        default="대기",
+        help="실행할 작업 상태",
+    )
     parser.add_argument("--dry-run", action="store_true", help="API 호출 없이 입력만 점검")
     parser.add_argument("--references", default="references", help="레퍼런스 자료 폴더")
     parser.add_argument(
@@ -63,6 +69,7 @@ def main():
                 print("레퍼런스 파일이 없어 분석을 건너뜁니다.")
 
     print("콘텐츠 자동화 작업을 시작합니다.", flush=True)
+    status_filter = None if args.status == "전체" else {args.status}
     results = run_batch_workflow(
         client=client,
         model_name=args.model,
@@ -70,6 +77,7 @@ def main():
         output_dir=args.output,
         limit=args.limit,
         dry_run=args.dry_run,
+        status_filter=status_filter,
     )
 
     print("ShowPark 자동 워크플로우 결과")

@@ -55,7 +55,7 @@ def clean_filename(value):
     return text.replace(" ", "_")[:80]
 
 
-def read_workflow_inputs(csv_path):
+def read_workflow_inputs(csv_path, status_filter=None):
     path = Path(csv_path)
     if not path.exists():
         raise FileNotFoundError(f"입력 파일을 찾을 수 없습니다: {path}")
@@ -63,10 +63,16 @@ def read_workflow_inputs(csv_path):
     with path.open("r", encoding="utf-8-sig", newline="") as file:
         rows = list(csv.DictReader(file))
 
+    allowed_statuses = set(status_filter or {"대기"})
+
     tasks = []
     for row_index, row in enumerate(rows):
         enabled = (row.get("enabled") or "yes").strip().lower()
         if enabled in {"no", "n", "false", "0", "아니오"}:
+            continue
+
+        status = normalize_workflow_status(row.get("status"))
+        if status not in allowed_statuses:
             continue
 
         context = DEFAULT_CONTEXT.copy()
@@ -147,8 +153,16 @@ def save_workflow_result(context, result, agent_report, output_dir, video_produc
     return project_folder
 
 
-def run_batch_workflow(client, model_name, input_csv, output_dir, limit=None, dry_run=False):
-    tasks = read_workflow_inputs(input_csv)
+def run_batch_workflow(
+    client,
+    model_name,
+    input_csv,
+    output_dir,
+    limit=None,
+    dry_run=False,
+    status_filter=None,
+):
+    tasks = read_workflow_inputs(input_csv, status_filter=status_filter)
     if limit is not None:
         tasks = tasks[:limit]
 
